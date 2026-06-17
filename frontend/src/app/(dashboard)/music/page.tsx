@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { Music, Sparkles, Download } from 'lucide-react'
+import { Music, Sparkles, Download, AlertCircle, ChevronDown } from 'lucide-react'
 import { useTrackList, useGenerateMusic, useTrackStatus } from '@/hooks/useMusic'
 import { useLyricsList } from '@/hooks/useLyrics'
 import { Button } from '@/components/ui/button'
@@ -45,6 +45,7 @@ function TrackItem({ track }: { track: Track }) {
   const isPolling = track.status === 'processing' || track.status === 'pending'
   const { data: updatedTrack } = useTrackStatus(track.id, isPolling)
   const displayTrack = updatedTrack || track
+  const [showError, setShowError] = useState(false)
 
   const handleDownload = () => {
     if (!displayTrack.file_url) return
@@ -57,48 +58,87 @@ function TrackItem({ track }: { track: Track }) {
   }
 
   const isCompleted = displayTrack.status === 'completed'
+  const isFailed = displayTrack.status === 'failed'
+  const hasError = isFailed && displayTrack.error_message
 
   return (
-    <Card className="hover:border-white/20 transition-colors">
+    <Card
+      className={`hover:border-white/20 transition-colors ${
+        isFailed ? 'border-red-500/30 bg-red-500/5' : ''
+      }`}
+    >
       <CardContent className="p-4">
-        <div className="flex flex-col sm:flex-row sm:items-center gap-3">
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2 mb-1">
-              <p className="text-sm font-medium text-white truncate">{displayTrack.title}</p>
-              <StatusBadge status={displayTrack.status} />
-            </div>
-            <p className="text-xs text-gray-500">
-              {displayTrack.genre}
-              {displayTrack.bpm && ` · ${displayTrack.bpm} BPM`}
-              {' · '}{formatRelativeTime(displayTrack.created_at)}
-            </p>
-            {displayTrack.error_message && (
-              <p className="text-xs text-red-400 mt-2 bg-red-500/10 px-2 py-1 rounded">
-                ❌ {displayTrack.error_message}
+        <div className="flex flex-col gap-3">
+          {/* 주요 정보 */}
+          <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2 mb-1">
+                <p className="text-sm font-medium text-white truncate">{displayTrack.title}</p>
+                <StatusBadge status={displayTrack.status} />
+              </div>
+              <p className="text-xs text-gray-500">
+                {displayTrack.genre}
+                {displayTrack.bpm && ` · ${displayTrack.bpm} BPM`}
+                {' · '}{formatRelativeTime(displayTrack.created_at)}
               </p>
-            )}
-          </div>
-          <div className="flex items-center gap-2 w-full sm:w-auto">
-            <div className="flex-1 sm:flex-none sm:w-64">
-              <AudioPlayer
-                src={displayTrack.file_url}
-                status={displayTrack.status}
-                compact
-              />
             </div>
-            <button
-              onClick={handleDownload}
-              disabled={!isCompleted}
-              className={`p-2 rounded-lg transition-colors ${
-                isCompleted
-                  ? 'text-gray-400 hover:text-white hover:bg-white/5 cursor-pointer'
-                  : 'text-gray-600 cursor-not-allowed opacity-50'
-              }`}
-              title={isCompleted ? '다운로드' : '생성 완료 후 다운로드 가능'}
-            >
-              <Download className="h-5 w-5" />
-            </button>
+            <div className="flex items-center gap-2 w-full sm:w-auto">
+              <div className="flex-1 sm:flex-none sm:w-64">
+                <AudioPlayer
+                  src={displayTrack.file_url}
+                  status={displayTrack.status}
+                  compact
+                />
+              </div>
+              <button
+                onClick={handleDownload}
+                disabled={!isCompleted}
+                className={`p-2 rounded-lg transition-colors ${
+                  isCompleted
+                    ? 'text-gray-400 hover:text-white hover:bg-white/5 cursor-pointer'
+                    : 'text-gray-600 cursor-not-allowed opacity-50'
+                }`}
+                title={isCompleted ? '다운로드' : '생성 완료 후 다운로드 가능'}
+              >
+                <Download className="h-5 w-5" />
+              </button>
+            </div>
           </div>
+
+          {/* 에러 정보 */}
+          {hasError && (
+            <div className="flex items-start gap-2">
+              <button
+                onClick={() => setShowError(!showError)}
+                className="flex items-start gap-2 flex-1 text-left hover:opacity-80 transition-opacity"
+              >
+                <AlertCircle className="h-4 w-4 text-red-400 flex-shrink-0 mt-0.5" />
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-medium text-red-400">생성 실패</p>
+                  <p className="text-xs text-red-300/80 truncate">
+                    {showError ? displayTrack.error_message : '사유 보기'}
+                  </p>
+                </div>
+                <ChevronDown
+                  className={`h-3.5 w-3.5 text-red-400 flex-shrink-0 mt-0.5 transition-transform ${
+                    showError ? 'rotate-180' : ''
+                  }`}
+                />
+              </button>
+            </div>
+          )}
+
+          {/* 확장된 에러 정보 */}
+          {hasError && showError && (
+            <div className="bg-red-500/10 border border-red-500/20 rounded-lg p-3">
+              <p className="text-xs text-red-300 font-mono leading-relaxed break-words">
+                {displayTrack.error_message}
+              </p>
+              <p className="text-xs text-red-400/60 mt-2">
+                💡 다른 AI 서비스로 재시도하거나 설정을 변경해보세요
+              </p>
+            </div>
+          )}
         </div>
       </CardContent>
     </Card>

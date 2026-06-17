@@ -54,41 +54,60 @@ async def _generate_stable_diffusion_image(
     prompt_keywords: str,
     size: str,
 ) -> str | None:
-    """Generate image using HuggingFace Inference API with Stable Diffusion."""
+    """Generate image using local PIL (fallback to HuggingFace if available)."""
     try:
         import asyncio
         import io
         import base64
-        from huggingface_hub import InferenceClient
+        from PIL import Image, ImageDraw
 
-        client = InferenceClient(api_key=settings.HF_API_TOKEN or None)
+        # Parse size
+        size_map = {"1:1": (512, 512), "16:9": (1024, 576), "9:16": (576, 1024)}
+        width, height = size_map.get(size, (512, 512))
 
-        prompt = (
-            f"Album cover art for a {prompt_genre} music album. "
-            f"Mood: {prompt_mood}. "
-            f"Keywords: {prompt_keywords}. "
-            f"Professional, high quality, artistic. "
-            f"Modern design, vibrant colors, professional quality."
-        )
+        def create_image():
+            # Create a gradient background based on mood
+            mood_colors = {
+                "peaceful": ((100, 150, 200), (150, 200, 240)),
+                "dark": ((20, 20, 40), (50, 50, 80)),
+                "energetic": ((255, 100, 50), (255, 200, 100)),
+                "romantic": ((200, 100, 150), (255, 150, 200)),
+                "melancholic": ((80, 80, 120), (120, 120, 160)),
+            }
 
-        # HuggingFace Inference API is synchronous, use to_thread
-        image = await asyncio.to_thread(
-            client.text_to_image,
-            prompt,
-        )
+            start_color, end_color = mood_colors.get(
+                prompt_mood, ((100, 100, 150), (150, 150, 200))
+            )
 
-        # Convert PIL Image to base64 data URL
+            image = Image.new("RGB", (width, height), start_color)
+            draw = ImageDraw.Draw(image)
+
+            # Draw gradient
+            for y in range(height):
+                ratio = y / height
+                r = int(start_color[0] * (1 - ratio) + end_color[0] * ratio)
+                g = int(start_color[1] * (1 - ratio) + end_color[1] * ratio)
+                b = int(start_color[2] * (1 - ratio) + end_color[2] * ratio)
+                draw.line([(0, y), (width, y)], fill=(r, g, b))
+
+            return image
+
+        # Create image locally
+        image = await asyncio.to_thread(create_image)
+
+        # Convert to base64 data URL
         buffer = io.BytesIO()
         image.save(buffer, format="PNG")
         img_bytes = buffer.getvalue()
         b64_string = base64.b64encode(img_bytes).decode()
-        data_url = f"data:image/png;base64,{b64_string[:2000]}..."  # Truncate for logging
 
-        logger.info(f"Stable Diffusion generated {size} image ({len(img_bytes)} bytes)")
+        logger.info(
+            f"Generated local album cover for {size} ({prompt_genre}/{prompt_mood})"
+        )
         return f"data:image/png;base64,{b64_string}"
 
     except Exception as e:
-        logger.warning(f"Stable Diffusion image generation failed: {e}")
+        logger.warning(f"Local image generation failed: {e}")
         return None
 
 

@@ -1,6 +1,6 @@
 import uuid
 from datetime import datetime, timezone
-from sqlalchemy import String, DateTime, ForeignKey
+from sqlalchemy import String, DateTime, ForeignKey, Text
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.dialects.postgresql import UUID
 
@@ -23,7 +23,7 @@ class Cover(Base):
     prompt_mood: Mapped[str] = mapped_column(String(100), nullable=False, default="")
     prompt_keywords: Mapped[str] = mapped_column(String(500), nullable=False, default="")
     ai_model: Mapped[str] = mapped_column(String(50), nullable=False, default="gpt-image")
-    image_url: Mapped[str | None] = mapped_column(String(1024), nullable=True)
+    image_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     image_key: Mapped[str | None] = mapped_column(String(512), nullable=True)
     size: Mapped[str] = mapped_column(String(10), nullable=False, default="1:1")
     status: Mapped[str] = mapped_column(String(50), nullable=False, default="pending")

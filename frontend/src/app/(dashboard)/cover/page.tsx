@@ -47,6 +47,55 @@ const ratioLabels: Record<string, string> = {
   '9:16': '세로형 (9:16)',
 }
 
+interface GroupedCover {
+  id: string
+  genre: string
+  mood: string
+  keywords: string
+  ai_model: string
+  created_at: string
+  status: string
+  images: Array<{ ratio: '1:1' | '16:9' | '9:16'; url?: string; size: string }>
+}
+
+function groupCoversByPrompt(covers: CoverImage[]): GroupedCover[] {
+  const grouped = new Map<string, GroupedCover>()
+
+  covers.forEach((cover) => {
+    const key = `${cover.created_at}-${cover.prompt_genre}-${cover.prompt_mood}`
+
+    if (!grouped.has(key)) {
+      grouped.set(key, {
+        id: cover.id,
+        genre: cover.genre || cover.prompt_genre,
+        mood: cover.mood || cover.prompt_mood,
+        keywords: cover.keywords || cover.prompt_keywords,
+        ai_model: cover.ai_model,
+        created_at: cover.created_at,
+        status: cover.status,
+        images: [],
+      })
+    }
+
+    const groupedCover = grouped.get(key)!
+    const ratioMap: Record<string, '1:1' | '16:9' | '9:16'> = {
+      '1:1': '1:1',
+      '16:9': '16:9',
+      '9:16': '9:16',
+    }
+
+    groupedCover.images.push({
+      ratio: ratioMap[cover.size] || ('1:1' as const),
+      url: cover.image_url,
+      size: cover.size,
+    })
+  })
+
+  return Array.from(grouped.values()).sort(
+    (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+  )
+}
+
 export default function CoverPage() {
   const queryClient = useQueryClient()
   const [genre, setGenre] = useState('')
@@ -54,13 +103,15 @@ export default function CoverPage() {
   const [keywords, setKeywords] = useState('')
   const [aiModel, setAiModel] = useState('dalle-3')
 
-  const { data: covers, isLoading } = useQuery({
+  const { data: rawCovers, isLoading } = useQuery({
     queryKey: ['covers'],
     queryFn: async () => {
       const res = await api.get<CoverImage[]>('/cover')
       return res.data
     },
   })
+
+  const covers = rawCovers ? groupCoversByPrompt(rawCovers) : []
 
   const generateMutation = useMutation({
     mutationFn: async (data: { genre: string; mood: string; keywords: string; ai_model: string }) => {
