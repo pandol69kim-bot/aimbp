@@ -28,16 +28,68 @@ async def generate_cover_image(
     prompt_mood: str,
     prompt_keywords: str,
     size: str = "1:1",
-    ai_model: str = "gpt-image",
+    ai_model: str = "dalle-3",
 ) -> str:
-    """Generate a cover image. Returns URL. Falls back to mock if no API key."""
-    if ai_model == "gpt-image" and settings.has_openai:
-        return await _generate_openai_image(
+    """Generate a cover image. Tries: OpenAI → Stable Diffusion → Mock."""
+    if ai_model in ("dalle-3", "gpt-image") and settings.has_openai:
+        result = await _generate_openai_image(
             prompt_genre, prompt_mood, prompt_keywords, size
         )
+        if result:
+            return result
+
+    result = await _generate_stable_diffusion_image(
+        prompt_genre, prompt_mood, prompt_keywords, size
+    )
+    if result:
+        return result
 
     logger.info(f"Using mock cover image for size {size}")
     return MOCK_COVER_URLS.get(size, MOCK_COVER_URLS["1:1"])
+
+
+async def _generate_stable_diffusion_image(
+    prompt_genre: str,
+    prompt_mood: str,
+    prompt_keywords: str,
+    size: str,
+) -> str | None:
+    """Generate image using HuggingFace Inference API with Stable Diffusion."""
+    try:
+        import asyncio
+        import io
+        import base64
+        from huggingface_hub import InferenceClient
+
+        client = InferenceClient(api_key=settings.HF_API_TOKEN or None)
+
+        prompt = (
+            f"Album cover art for a {prompt_genre} music album. "
+            f"Mood: {prompt_mood}. "
+            f"Keywords: {prompt_keywords}. "
+            f"Professional, high quality, artistic. "
+            f"Modern design, vibrant colors, professional quality."
+        )
+
+        # HuggingFace Inference API is synchronous, use to_thread
+        image = await asyncio.to_thread(
+            client.text_to_image,
+            prompt,
+        )
+
+        # Convert PIL Image to base64 data URL
+        buffer = io.BytesIO()
+        image.save(buffer, format="PNG")
+        img_bytes = buffer.getvalue()
+        b64_string = base64.b64encode(img_bytes).decode()
+        data_url = f"data:image/png;base64,{b64_string[:2000]}..."  # Truncate for logging
+
+        logger.info(f"Stable Diffusion generated {size} image ({len(img_bytes)} bytes)")
+        return f"data:image/png;base64,{b64_string}"
+
+    except Exception as e:
+        logger.warning(f"Stable Diffusion image generation failed: {e}")
+        return None
 
 
 async def _generate_openai_image(
@@ -45,7 +97,7 @@ async def _generate_openai_image(
     prompt_mood: str,
     prompt_keywords: str,
     size: str,
-) -> str:
+) -> str | None:
     try:
         from openai import AsyncOpenAI
 
@@ -67,11 +119,12 @@ async def _generate_openai_image(
             quality="standard",
             n=1,
         )
+        logger.info(f"OpenAI generated image for size {size}")
         return response.data[0].url
 
     except Exception as e:
-        logger.error(f"OpenAI image generation failed: {e}")
-        return MOCK_COVER_URLS.get(size, MOCK_COVER_URLS["1:1"])
+        logger.warning(f"OpenAI image generation failed: {e}")
+        return None
 
 
 async def _process_cover(cover_id: str, db_session_factory) -> None:

@@ -48,6 +48,38 @@ export default function AlbumDetailPage() {
 
   const albumCovers = allCovers?.filter(c => c.album_id === albumId) || []
 
+  // Group covers by prompt (same prompt = 3 sizes)
+  const groupedCovers = albumCovers.reduce((acc, cover) => {
+    const key = `${cover.prompt_genre}-${cover.prompt_mood}-${cover.prompt_keywords}`
+    const existing = acc.find(g => g.key === key)
+    if (existing) {
+      existing.images.push({
+        ratio: cover.size as '1:1' | '16:9' | '9:16',
+        url: cover.image_url || '',
+      })
+    } else {
+      acc.push({
+        key,
+        prompt_genre: cover.prompt_genre,
+        prompt_mood: cover.prompt_mood,
+        prompt_keywords: cover.prompt_keywords,
+        status: cover.status,
+        images: cover.image_url ? [{
+          ratio: cover.size as '1:1' | '16:9' | '9:16',
+          url: cover.image_url,
+        }] : [],
+      })
+    }
+    return acc
+  }, [] as Array<{
+    key: string
+    prompt_genre: string
+    prompt_mood: string
+    prompt_keywords: string
+    status: string
+    images: Array<{ ratio: '1:1' | '16:9' | '9:16', url: string }>
+  }>)
+
   // Generate cover mutation
   const generateCoverMutation = useMutation({
     mutationFn: async (data: { genre: string; mood: string; keywords: string; ai_model: string; album_id: string }) => {
@@ -180,71 +212,74 @@ export default function AlbumDetailPage() {
       </div>
 
       {/* Cover List */}
-      {albumCovers.length > 0 && (
+      {groupedCovers.length > 0 && (
         <Card className="mb-6">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <ImageIcon className="h-4 w-4 text-primary-400" />
-              앨범 커버
-              <Badge variant="outline" className="ml-1">{albumCovers.length}</Badge>
+              생성 이력
+              <Badge variant="outline" className="ml-1">{groupedCovers.length}</Badge>
             </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="space-y-4">
-              {albumCovers.map((cover) => (
-                <div key={cover.id} className="border border-white/5 rounded-lg p-3">
+              {groupedCovers.map((coverGroup) => (
+                <div key={coverGroup.key} className="border border-white/5 rounded-lg p-4 hover:border-white/10 transition-colors">
                   <div className="flex items-start justify-between mb-3">
                     <div>
                       <p className="text-sm font-medium text-white">
-                        {cover.prompt_genre} · {cover.prompt_mood}
+                        {coverGroup.prompt_genre} · {coverGroup.prompt_mood}
                       </p>
                       <p className="text-xs text-gray-500 mt-1">
-                        {cover.prompt_keywords}
+                        {coverGroup.prompt_keywords}
                       </p>
                     </div>
-                    <StatusBadge status={cover.status} />
+                    <StatusBadge status={coverGroup.status} />
                   </div>
-                  {cover.status === 'completed' && (
+
+                  {coverGroup.status === 'completed' && coverGroup.images.length > 0 && (
                     <div className="grid grid-cols-3 gap-3">
-                      {cover.images && cover.images.length > 0 ? (
-                        cover.images.map((img) => (
-                          <div key={img.ratio} className="group relative">
-                            <div
-                              className={`relative overflow-hidden rounded-lg bg-white/5 ${
-                                img.ratio === '1:1'
-                                  ? 'aspect-square'
-                                  : img.ratio === '16:9'
-                                  ? 'aspect-video'
-                                  : 'aspect-[9/16]'
-                              }`}
-                            >
-                              {/* eslint-disable-next-line @next/next/no-img-element */}
-                              <img
-                                src={img.url}
-                                alt={`Cover ${img.ratio}`}
-                                className="h-full w-full object-cover"
-                              />
-                              <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                                <a
-                                  href={img.url}
-                                  download
-                                  className="flex items-center gap-1.5 rounded-lg bg-white/20 px-3 py-1.5 text-xs text-white hover:bg-white/30 transition-colors"
-                                >
-                                  <Download className="h-3.5 w-3.5" />
-                                  다운로드
-                                </a>
+                      {coverGroup.images.map((img) => (
+                        <div key={img.ratio} className="group relative">
+                          <div
+                            className={`relative overflow-hidden rounded-lg bg-white/5 ${
+                              img.ratio === '1:1'
+                                ? 'aspect-square'
+                                : img.ratio === '16:9'
+                                ? 'aspect-video'
+                                : 'aspect-[9/16]'
+                            }`}
+                          >
+                            {img.url ? (
+                              <>
+                                {/* eslint-disable-next-line @next/next/no-img-element */}
+                                <img
+                                  src={img.url}
+                                  alt={`Cover ${img.ratio}`}
+                                  className="h-full w-full object-cover"
+                                />
+                                <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                                  <a
+                                    href={img.url}
+                                    download={`cover-${img.ratio}`}
+                                    className="flex items-center gap-1.5 rounded-lg bg-primary-500/90 px-3 py-1.5 text-xs text-white hover:bg-primary-600 transition-colors"
+                                  >
+                                    <Download className="h-3.5 w-3.5" />
+                                    다운로드
+                                  </a>
+                                </div>
+                              </>
+                            ) : (
+                              <div className="flex items-center justify-center h-full bg-white/5">
+                                <ImageIcon className="h-6 w-6 text-gray-600" />
                               </div>
-                            </div>
-                            <p className="mt-1.5 text-center text-xs text-gray-500">
-                              {img.ratio}
-                            </p>
+                            )}
                           </div>
-                        ))
-                      ) : (
-                        <p className="col-span-3 text-xs text-gray-500 text-center py-4">
-                          이미지 로딩 중...
-                        </p>
-                      )}
+                          <p className="mt-1.5 text-center text-xs text-gray-500">
+                            {img.ratio}
+                          </p>
+                        </div>
+                      ))}
                     </div>
                   )}
                 </div>

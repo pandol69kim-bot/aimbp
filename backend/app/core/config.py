@@ -18,6 +18,9 @@ class Settings(BaseSettings):
     # OpenAI
     OPENAI_API_KEY: str = ""
 
+    # HuggingFace
+    HF_API_TOKEN: str = ""
+
     # Anthropic
     ANTHROPIC_API_KEY: str = ""
 
@@ -49,6 +52,10 @@ class Settings(BaseSettings):
     @property
     def has_openai(self) -> bool:
         return bool(self.OPENAI_API_KEY and self.OPENAI_API_KEY != "your-openai-api-key")
+
+    @property
+    def has_hf(self) -> bool:
+        return bool(self.HF_API_TOKEN and self.HF_API_TOKEN != "your-hf-api-token")
 
     @property
     def has_anthropic(self) -> bool:

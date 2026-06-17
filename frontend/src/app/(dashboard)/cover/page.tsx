@@ -174,61 +174,128 @@ export default function CoverPage() {
               </CardContent>
             </Card>
           ) : (
-            <div className="space-y-6">
-              {covers.map((cover) => (
-                <Card key={cover.id} className="hover:border-white/20 transition-colors">
-                  <CardHeader>
-                    <div className="flex items-start justify-between">
-                      <div>
-                        <CardTitle className="text-base">{cover.genre} · {cover.mood}</CardTitle>
-                        <p className="text-xs text-gray-500 mt-1">
-                          {cover.keywords} · {cover.ai_model} · {formatRelativeTime(cover.created_at)}
-                        </p>
+            <div className="space-y-3">
+              {covers.map((cover) => {
+                const hasImages = cover.images && Array.isArray(cover.images) && cover.images.length > 0
+                const isCompleted = cover.status === 'completed'
+                const isProcessing = cover.status === 'processing'
+
+                return (
+                  <Card
+                    key={cover.id}
+                    className={`hover:border-white/20 transition-colors overflow-hidden ${
+                      isCompleted && hasImages ? 'cursor-pointer' : ''
+                    }`}
+                  >
+                    <CardHeader className="pb-3">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex-1 min-w-0">
+                          <CardTitle className="text-sm truncate">
+                            {cover.genre} · {cover.mood}
+                          </CardTitle>
+                          <p className="text-xs text-gray-500 mt-1 truncate">
+                            {cover.keywords} · {cover.ai_model} · {formatRelativeTime(cover.created_at)}
+                          </p>
+                        </div>
+                        <StatusBadge status={cover.status} />
                       </div>
-                      <StatusBadge status={cover.status} />
-                    </div>
-                  </CardHeader>
-                  {cover.status === 'completed' && cover.images && cover.images.length > 0 && (
-                    <CardContent>
-                      <div className="grid grid-cols-3 gap-3">
-                        {cover.images.map((img) => (
-                          <div key={img.ratio} className="group relative">
+                    </CardHeader>
+
+                    {/* 완료 상태 - 이미지 표시 */}
+                    {isCompleted && hasImages ? (
+                      <CardContent className="pt-0">
+                        <div className="grid grid-cols-3 gap-2">
+                          {cover.images.map((img) => (
                             <div
-                              className={`relative overflow-hidden rounded-lg bg-white/5 ${
-                                img.ratio === '1:1'
-                                  ? 'aspect-square'
-                                  : img.ratio === '16:9'
-                                  ? 'aspect-video'
-                                  : 'aspect-[9/16]'
-                              }`}
+                              key={img.ratio}
+                              className="group relative overflow-hidden rounded-lg bg-white/5"
                             >
-                              {/* eslint-disable-next-line @next/next/no-img-element */}
-                              <img
-                                src={img.url}
-                                alt={`Cover ${img.ratio}`}
-                                className="h-full w-full object-cover"
-                              />
-                              <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                                <a
-                                  href={img.url}
-                                  download
-                                  className="flex items-center gap-1.5 rounded-lg bg-white/20 px-3 py-1.5 text-xs text-white hover:bg-white/30 transition-colors"
-                                >
-                                  <Download className="h-3.5 w-3.5" />
-                                  다운로드
-                                </a>
+                              <div
+                                className={`relative overflow-hidden bg-gradient-to-br from-white/10 to-white/5 ${
+                                  img.ratio === '1:1'
+                                    ? 'aspect-square'
+                                    : img.ratio === '16:9'
+                                    ? 'aspect-video'
+                                    : 'aspect-[9/16]'
+                                }`}
+                              >
+                                {/* 이미지 */}
+                                {img.url ? (
+                                  <>
+                                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                                    <img
+                                      src={img.url}
+                                      alt={`Cover ${img.ratio}`}
+                                      className="h-full w-full object-cover group-hover:scale-105 transition-transform duration-300"
+                                      onError={(e) => {
+                                        e.currentTarget.style.display = 'none'
+                                      }}
+                                    />
+                                    {/* 호버 오버레이 */}
+                                    <div className="absolute inset-0 bg-black/70 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                                      <a
+                                        href={img.url}
+                                        download={`cover-${img.ratio}`}
+                                        className="flex items-center gap-1 rounded-md bg-primary-600 px-2 py-1.5 text-xs text-white hover:bg-primary-500 transition-colors"
+                                      >
+                                        <Download className="h-3.5 w-3.5" />
+                                        다운로드
+                                      </a>
+                                    </div>
+                                  </>
+                                ) : (
+                                  <div className="flex items-center justify-center h-full text-gray-500">
+                                    <ImageIcon className="h-4 w-4" />
+                                  </div>
+                                )}
+                              </div>
+                              {/* 비율 라벨 */}
+                              <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent px-2 py-1.5">
+                                <p className="text-xs text-gray-300 text-center font-medium">
+                                  {ratioLabels[img.ratio]}
+                                </p>
                               </div>
                             </div>
-                            <p className="mt-1.5 text-center text-xs text-gray-500">
-                              {ratioLabels[img.ratio]}
-                            </p>
+                          ))}
+                        </div>
+                      </CardContent>
+                    ) : isProcessing ? (
+                      <CardContent className="pt-0">
+                        <div className="flex items-center justify-center gap-2 text-primary-400 py-6">
+                          <svg
+                            className="h-4 w-4 animate-spin flex-shrink-0"
+                            xmlns="http://www.w3.org/2000/svg"
+                            fill="none"
+                            viewBox="0 0 24 24"
+                          >
+                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                            <path
+                              className="opacity-75"
+                              fill="currentColor"
+                              d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
+                            />
+                          </svg>
+                          <span className="text-xs font-medium">생성 중... (1-2분)</span>
+                        </div>
+                      </CardContent>
+                    ) : cover.status === 'failed' ? (
+                      <CardContent className="pt-0">
+                        <div className="flex items-center justify-center gap-2 text-red-400 py-6">
+                          <span className="text-xs font-medium">생성 실패 - 다시 시도해주세요</span>
+                        </div>
+                      </CardContent>
+                    ) : (
+                      <CardContent className="pt-0">
+                        <div className="flex items-center justify-center py-6">
+                          <div className="h-16 w-full rounded-lg bg-white/5 flex items-center justify-center">
+                            <p className="text-xs text-gray-500">이미지 처리 중...</p>
                           </div>
-                        ))}
-                      </div>
-                    </CardContent>
-                  )}
-                </Card>
-              ))}
+                        </div>
+                      </CardContent>
+                    )}
+                  </Card>
+                )
+              })}
             </div>
           )}
         </div>
