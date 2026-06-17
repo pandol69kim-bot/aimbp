@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { Music, Sparkles } from 'lucide-react'
+import { Music, Sparkles, Download } from 'lucide-react'
 import { useTrackList, useGenerateMusic, useTrackStatus } from '@/hooks/useMusic'
 import { useLyricsList } from '@/hooks/useLyrics'
 import { Button } from '@/components/ui/button'
@@ -35,10 +35,28 @@ const moodOptions = [
   { value: 'dark', label: '어둡고 강렬한' },
 ]
 
+const aiServiceOptions = [
+  { value: 'suno', label: 'Suno AI' },
+  { value: 'mureka', label: 'Mureka' },
+  { value: 'udio', label: 'Udio' },
+]
+
 function TrackItem({ track }: { track: Track }) {
   const isPolling = track.status === 'processing' || track.status === 'pending'
   const { data: updatedTrack } = useTrackStatus(track.id, isPolling)
   const displayTrack = updatedTrack || track
+
+  const handleDownload = () => {
+    if (!displayTrack.file_url) return
+    const link = document.createElement('a')
+    link.href = displayTrack.file_url
+    link.download = `${displayTrack.title || 'track'}.mp3`
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+  }
+
+  const isCompleted = displayTrack.status === 'completed'
 
   return (
     <Card className="hover:border-white/20 transition-colors">
@@ -54,13 +72,32 @@ function TrackItem({ track }: { track: Track }) {
               {displayTrack.bpm && ` · ${displayTrack.bpm} BPM`}
               {' · '}{formatRelativeTime(displayTrack.created_at)}
             </p>
+            {displayTrack.error_message && (
+              <p className="text-xs text-red-400 mt-2 bg-red-500/10 px-2 py-1 rounded">
+                ❌ {displayTrack.error_message}
+              </p>
+            )}
           </div>
-          <div className="w-full sm:w-64">
-            <AudioPlayer
-              src={displayTrack.file_url}
-              status={displayTrack.status}
-              compact
-            />
+          <div className="flex items-center gap-2 w-full sm:w-auto">
+            <div className="flex-1 sm:flex-none sm:w-64">
+              <AudioPlayer
+                src={displayTrack.file_url}
+                status={displayTrack.status}
+                compact
+              />
+            </div>
+            <button
+              onClick={handleDownload}
+              disabled={!isCompleted}
+              className={`p-2 rounded-lg transition-colors ${
+                isCompleted
+                  ? 'text-gray-400 hover:text-white hover:bg-white/5 cursor-pointer'
+                  : 'text-gray-600 cursor-not-allowed opacity-50'
+              }`}
+              title={isCompleted ? '다운로드' : '생성 완료 후 다운로드 가능'}
+            >
+              <Download className="h-5 w-5" />
+            </button>
           </div>
         </div>
       </CardContent>
@@ -78,6 +115,7 @@ export default function MusicPage() {
   const [bpm, setBpm] = useState('')
   const [mood, setMood] = useState('')
   const [lyricsId, setLyricsId] = useState('')
+  const [aiService, setAiService] = useState('suno')
 
   const lyricsOptions = [
     { value: '', label: '가사 없이 생성' },
@@ -92,6 +130,7 @@ export default function MusicPage() {
       bpm: bpm ? parseInt(bpm) : undefined,
       mood,
       lyrics_id: lyricsId || undefined,
+      ai_service: aiService,
     })
     setTitle('')
     setBpm('')
@@ -154,6 +193,13 @@ export default function MusicPage() {
                   options={lyricsOptions}
                   value={lyricsId}
                   onChange={(e) => setLyricsId(e.target.value)}
+                />
+                <Select
+                  label="AI 서비스"
+                  options={aiServiceOptions}
+                  value={aiService}
+                  onChange={(e) => setAiService(e.target.value)}
+                  required
                 />
                 <Button
                   type="submit"

@@ -27,6 +27,7 @@ class TrackResponse(BaseModel):
     duration: Optional[float]
     ai_service: Optional[str]
     task_id: Optional[str]
+    error_message: Optional[str] = None
     created_at: datetime
     updated_at: datetime
 
@@ -37,3 +38,4 @@ class TrackStatusResponse(BaseModel):
     status: str
     file_url: Optional[str] = None
     task_id: Optional[str] = None
+    error_message: Optional[str] = None

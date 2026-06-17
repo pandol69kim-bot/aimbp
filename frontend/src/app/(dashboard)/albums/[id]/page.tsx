@@ -2,10 +2,13 @@
 
 import { useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
-import { ArrowLeft, Plus, Trash2, GripVertical, Image as ImageIcon, Music } from 'lucide-react'
+import { ArrowLeft, Plus, Trash2, GripVertical, Image as ImageIcon, Music, Sparkles, Download } from 'lucide-react'
+import { useQuery, useMutation } from '@tanstack/react-query'
+import api from '@/lib/api'
 import { useAlbumById, useAddTrackToAlbum, useRemoveTrackFromAlbum, useUpdateAlbum } from '@/hooks/useAlbums'
 import { useTrackList } from '@/hooks/useMusic'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Dialog, DialogHeader, DialogBody, DialogFooter } from '@/components/ui/dialog'
@@ -13,6 +16,7 @@ import { StatusBadge } from '@/components/common/StatusBadge'
 import { AudioPlayer } from '@/components/audio/AudioPlayer'
 import { PageLoader } from '@/components/common/LoadingSpinner'
 import { Badge } from '@/components/ui/badge'
+import { CoverImage } from '@/types'
 import { formatDate } from '@/lib/utils'
 
 export default function AlbumDetailPage() {
@@ -28,6 +32,53 @@ export default function AlbumDetailPage() {
 
   const [isAddTrackOpen, setIsAddTrackOpen] = useState(false)
   const [selectedTrackId, setSelectedTrackId] = useState('')
+  const [isGenerateCoverOpen, setIsGenerateCoverOpen] = useState(false)
+  const [coverGenre, setCoverGenre] = useState('')
+  const [coverMood, setCoverMood] = useState('')
+  const [coverKeywords, setCoverKeywords] = useState('')
+
+  // Fetch covers for this album
+  const { data: allCovers } = useQuery({
+    queryKey: ['covers'],
+    queryFn: async () => {
+      const res = await api.get<CoverImage[]>('/cover')
+      return res.data
+    },
+  })
+
+  const albumCovers = allCovers?.filter(c => c.album_id === albumId) || []
+
+  // Generate cover mutation
+  const generateCoverMutation = useMutation({
+    mutationFn: async (data: { genre: string; mood: string; keywords: string; ai_model: string; album_id: string }) => {
+      const res = await api.post('/cover/generate', {
+        prompt_genre: data.genre,
+        prompt_mood: data.mood,
+        prompt_keywords: data.keywords,
+        ai_model: data.ai_model,
+        album_id: data.album_id,
+      })
+      return res.data
+    },
+    onSuccess: () => {
+      setCoverGenre('')
+      setCoverMood('')
+      setCoverKeywords('')
+      setIsGenerateCoverOpen(false)
+    },
+  })
+
+  const handleGenerateCover = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!coverGenre || !coverMood || !coverKeywords) return
+    await generateCoverMutation.mutateAsync({
+      genre: coverGenre,
+      mood: coverMood,
+      keywords: coverKeywords,
+      ai_model: 'dalle-3',
+      album_id: albumId,
+    })
+  }
 
   const completedTracks = allTracks?.filter((t) => t.status === 'completed') || []
   const albumTrackIds = album?.tracks.map((at) => at.track_id) || []
@@ -103,6 +154,14 @@ export default function AlbumDetailPage() {
             <Button
               variant="outline"
               size="sm"
+              onClick={() => setIsGenerateCoverOpen(true)}
+            >
+              <Sparkles className="h-3.5 w-3.5" />
+              커버 생성
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
               onClick={handlePublish}
               isLoading={updateAlbumMutation.isPending}
             >
@@ -119,6 +178,81 @@ export default function AlbumDetailPage() {
           </div>
         </div>
       </div>
+
+      {/* Cover List */}
+      {albumCovers.length > 0 && (
+        <Card className="mb-6">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <ImageIcon className="h-4 w-4 text-primary-400" />
+              앨범 커버
+              <Badge variant="outline" className="ml-1">{albumCovers.length}</Badge>
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-4">
+              {albumCovers.map((cover) => (
+                <div key={cover.id} className="border border-white/5 rounded-lg p-3">
+                  <div className="flex items-start justify-between mb-3">
+                    <div>
+                      <p className="text-sm font-medium text-white">
+                        {cover.prompt_genre} · {cover.prompt_mood}
+                      </p>
+                      <p className="text-xs text-gray-500 mt-1">
+                        {cover.prompt_keywords}
+                      </p>
+                    </div>
+                    <StatusBadge status={cover.status} />
+                  </div>
+                  {cover.status === 'completed' && (
+                    <div className="grid grid-cols-3 gap-3">
+                      {cover.images && cover.images.length > 0 ? (
+                        cover.images.map((img) => (
+                          <div key={img.ratio} className="group relative">
+                            <div
+                              className={`relative overflow-hidden rounded-lg bg-white/5 ${
+                                img.ratio === '1:1'
+                                  ? 'aspect-square'
+                                  : img.ratio === '16:9'
+                                  ? 'aspect-video'
+                                  : 'aspect-[9/16]'
+                              }`}
+                            >
+                              {/* eslint-disable-next-line @next/next/no-img-element */}
+                              <img
+                                src={img.url}
+                                alt={`Cover ${img.ratio}`}
+                                className="h-full w-full object-cover"
+                              />
+                              <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                                <a
+                                  href={img.url}
+                                  download
+                                  className="flex items-center gap-1.5 rounded-lg bg-white/20 px-3 py-1.5 text-xs text-white hover:bg-white/30 transition-colors"
+                                >
+                                  <Download className="h-3.5 w-3.5" />
+                                  다운로드
+                                </a>
+                              </div>
+                            </div>
+                            <p className="mt-1.5 text-center text-xs text-gray-500">
+                              {img.ratio}
+                            </p>
+                          </div>
+                        ))
+                      ) : (
+                        <p className="col-span-3 text-xs text-gray-500 text-center py-4">
+                          이미지 로딩 중...
+                        </p>
+                      )}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Track List */}
       <Card>
@@ -189,6 +323,67 @@ export default function AlbumDetailPage() {
           )}
         </CardContent>
       </Card>
+
+      {/* Generate Cover Dialog */}
+      <Dialog open={isGenerateCoverOpen} onClose={() => setIsGenerateCoverOpen(false)}>
+        <DialogHeader title="커버 생성" onClose={() => setIsGenerateCoverOpen(false)} />
+        <DialogBody>
+          <form id="generate-cover-form" onSubmit={handleGenerateCover} className="space-y-4">
+            <Select
+              label="장르"
+              options={[
+                { value: 'pop', label: 'Pop' },
+                { value: 'kpop', label: 'K-Pop' },
+                { value: 'rock', label: 'Rock' },
+                { value: 'electronic', label: 'Electronic' },
+                { value: 'hiphop', label: 'Hip-Hop' },
+              ]}
+              placeholder="장르 선택"
+              value={coverGenre}
+              onChange={(e) => setCoverGenre(e.target.value)}
+              required
+            />
+            <Select
+              label="분위기"
+              options={[
+                { value: 'dreamy', label: '몽환적' },
+                { value: 'energetic', label: '에너제틱' },
+                { value: 'dark', label: '다크' },
+                { value: 'romantic', label: '로맨틱' },
+                { value: 'minimalist', label: '미니멀리스트' },
+              ]}
+              placeholder="분위기 선택"
+              value={coverMood}
+              onChange={(e) => setCoverMood(e.target.value)}
+              required
+            />
+            <Input
+              label="키워드"
+              placeholder="ex) 야경, 도시, 별빛"
+              value={coverKeywords}
+              onChange={(e) => setCoverKeywords(e.target.value)}
+              required
+            />
+          </form>
+          <p className="text-xs text-gray-500 mt-4 text-center">
+            1:1, 16:9, 9:16 3가지 비율로 생성됩니다
+          </p>
+        </DialogBody>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => setIsGenerateCoverOpen(false)}>
+            취소
+          </Button>
+          <Button
+            type="submit"
+            form="generate-cover-form"
+            isLoading={generateCoverMutation.isPending}
+            disabled={!coverGenre || !coverMood || !coverKeywords}
+          >
+            <Sparkles className="h-4 w-4" />
+            커버 생성
+          </Button>
+        </DialogFooter>
+      </Dialog>
 
       {/* Add Track Dialog */}
       <Dialog open={isAddTrackOpen} onClose={() => setIsAddTrackOpen(false)}>

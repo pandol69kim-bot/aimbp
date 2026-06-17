@@ -9,7 +9,7 @@ export function useLyricsList() {
     queryKey: ['lyrics'],
     queryFn: async () => {
       const response = await api.get('/lyrics')
-      return response.data.data || []
+      return response.data || []
     },
   })
 }

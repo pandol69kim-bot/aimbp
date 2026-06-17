@@ -21,8 +21,9 @@ class Settings(BaseSettings):
     # Anthropic
     ANTHROPIC_API_KEY: str = ""
 
-    # Suno (mock)
+    # Suno
     SUNO_API_KEY: str = ""
+    SUNO_API_BASE: str = "https://api.suno.ai"
 
     # Mureka
     MUREKA_API_KEY: str = ""
@@ -52,6 +53,10 @@ class Settings(BaseSettings):
     @property
     def has_anthropic(self) -> bool:
         return bool(self.ANTHROPIC_API_KEY and self.ANTHROPIC_API_KEY != "your-anthropic-api-key")
+
+    @property
+    def has_suno(self) -> bool:
+        return bool(self.SUNO_API_KEY and self.SUNO_API_KEY != "your-suno-api-key")
 
     @property
     def has_mureka(self) -> bool:

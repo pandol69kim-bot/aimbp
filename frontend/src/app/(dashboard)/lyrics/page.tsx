@@ -40,9 +40,8 @@ const languageOptions = [
 ]
 
 const aiModelOptions = [
-  { value: 'gpt-4', label: 'GPT-4' },
-  { value: 'claude-3', label: 'Claude 3' },
-  { value: 'gemini-pro', label: 'Gemini Pro' },
+  { value: 'openai', label: 'OpenAI GPT-4o-mini' },
+  { value: 'claude', label: 'Anthropic Claude Haiku' },
 ]
 
 function LyricsCard({ lyrics, onDelete }: { lyrics: Lyrics; onDelete: (id: string) => void }) {
@@ -119,7 +118,7 @@ export default function LyricsPage() {
   const [genre, setGenre] = useState('')
   const [artistStyle, setArtistStyle] = useState('')
   const [language, setLanguage] = useState('korean')
-  const [aiModel, setAiModel] = useState('gpt-4')
+  const [aiModel, setAiModel] = useState('openai')
   const [generatedLyrics, setGeneratedLyrics] = useState<Lyrics | null>(null)
 
   const handleGenerate = async (e: React.FormEvent) => {

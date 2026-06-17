@@ -9,7 +9,7 @@ export function useTrackList() {
     queryKey: ['tracks'],
     queryFn: async () => {
       const response = await api.get('/music')
-      return response.data.data || []
+      return response.data || []
     },
   })
 }

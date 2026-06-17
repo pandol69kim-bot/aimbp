@@ -85,6 +85,7 @@ async def get_track_status(
             status=track.status,
             file_url=track.file_url,
             task_id=track.task_id,
+            error_message=track.error_message,
         ).model_dump()
     )
 

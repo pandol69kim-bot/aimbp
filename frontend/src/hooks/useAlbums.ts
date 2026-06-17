@@ -9,7 +9,7 @@ export function useAlbumList() {
     queryKey: ['albums'],
     queryFn: async () => {
       const response = await api.get('/albums')
-      return response.data.data || []
+      return response.data || []
     },
   })
 }

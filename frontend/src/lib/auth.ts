@@ -7,18 +7,18 @@ interface TokenData {
 }
 
 export async function loginUser(data: LoginRequest): Promise<TokenData> {
-  const response = await api.post<ApiResponse<TokenData>>('/auth/login', data)
-  return response.data.data!
+  const response = await api.post<TokenData>('/auth/login', data)
+  return response.data as TokenData
 }
 
 export async function registerUser(data: RegisterRequest): Promise<{ user: User }> {
-  const response = await api.post<ApiResponse<User>>('/auth/register', data)
-  return { user: response.data.data! }
+  const response = await api.post<User>('/auth/register', data)
+  return { user: response.data as User }
 }
 
 export async function fetchCurrentUser(): Promise<User> {
-  const response = await api.get<ApiResponse<User>>('/auth/me')
-  return response.data.data!
+  const response = await api.get<User>('/auth/me')
+  return response.data as User
 }
 
 export async function logoutUser(): Promise<void> {

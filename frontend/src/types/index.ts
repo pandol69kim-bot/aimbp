@@ -29,6 +29,8 @@ export interface Track {
   status: 'pending' | 'processing' | 'completed' | 'failed'
   file_url?: string
   duration?: number
+  ai_service?: string
+  error_message?: string
   created_at: string
 }
 

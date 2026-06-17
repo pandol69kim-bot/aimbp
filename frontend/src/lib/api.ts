@@ -19,7 +19,16 @@ api.interceptors.request.use(
 )
 
 api.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    // API 응답 형식 자동 변환: { success, data: {...}, error } → data 추출
+    if (response.data?.success && 'data' in response.data && 'error' in response.data) {
+      return {
+        ...response,
+        data: response.data.data,
+      }
+    }
+    return response
+  },
   async (error: AxiosError) => {
     if (error.response?.status === 401) {
       if (typeof window !== 'undefined') {
