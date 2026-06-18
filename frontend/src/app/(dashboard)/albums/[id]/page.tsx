@@ -202,13 +202,14 @@ export default function AlbumDetailPage() {
             </p>
           </div>
           <div className="flex gap-2 mt-4 flex-wrap items-center">
-            {album.is_locked ? (
+            {/* 발행됨 상태 */}
+            {album.status === 'published' || album.is_locked ? (
               <>
                 <Button
                   size="sm"
                   onClick={handleDownload}
                   isLoading={isDownloading}
-                  className="bg-green-600 hover:bg-green-700"
+                  className="bg-green-600 hover:bg-green-700 text-white"
                 >
                   <Download className="h-3.5 w-3.5" />
                   앨범 다운로드 (ZIP)
@@ -216,6 +217,7 @@ export default function AlbumDetailPage() {
                 <span className="text-xs text-green-400">✅ 발행됨 · 다운로드 가능</span>
               </>
             ) : (
+              /* Draft 상태 */
               <>
                 <Button
                   variant="outline"
@@ -304,10 +306,10 @@ export default function AlbumDetailPage() {
                     <StatusBadge status={track.status} />
                     <button
                       onClick={() => handleRemoveTrack(albumTrack.track_id)}
-                      disabled={album.is_locked}
-                      title={album.is_locked ? "발행된 앨범은 수정할 수 없습니다" : ""}
+                      disabled={album.status === 'published' || album.is_locked}
+                      title={album.status === 'published' || album.is_locked ? "발행된 앨범은 수정할 수 없습니다" : ""}
                       className={`p-1.5 rounded-lg transition-colors opacity-0 group-hover:opacity-100 ${
-                        album.is_locked
+                        album.status === 'published' || album.is_locked
                           ? 'text-gray-700 cursor-not-allowed'
                           : 'text-gray-600 hover:text-red-400 hover:bg-red-900/20'
                       }`}
