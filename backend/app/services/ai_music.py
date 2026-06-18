@@ -28,10 +28,10 @@ async def _simulate_music_generation(track_id: str, db_session_factory) -> None:
     ai_service = track.ai_service or "suno"
 
     # Try each service in order of reliability
-    if ai_service == "mureka" and settings.has_mureka:
+    if ai_service == "mureka":
         logger.info(f"Using Mureka for track {track_id}")
         await _run_mureka_generation(track_id, db_session_factory, track)
-    elif ai_service == "suno" and settings.has_suno:
+    elif ai_service == "suno":
         logger.info(f"Using Suno for track {track_id}")
         await _run_suno_generation(track_id, db_session_factory, track)
     else:
@@ -59,24 +59,14 @@ async def _mock_generation(track_id: str, db_session_factory) -> None:
 
 
 async def _run_suno_generation(track_id: str, db_session_factory, track) -> None:
-    """Call Suno API, poll until done, then update the track. Fallback to mock on error."""
+    """Submit request to sunoapi.org. Result arrives via webhook callback."""
     try:
         suno_task_id = await _call_suno_generate(
             title=track.title,
             genre=track.genre or "",
             mood=track.mood or "",
+            track_id=track_id,
         )
-
-        file_url = None
-        for attempt in range(120):  # poll up to 10 minutes (120 × 5s)
-            await asyncio.sleep(5)
-            result = await _poll_suno_task(suno_task_id)
-            if result["status"] in ["completed", "success"]:
-                file_url = result.get("audio_url") or result.get("file_url") or MOCK_MP3_URL
-                break
-            if result["status"] in ["failed", "error"]:
-                logger.error(f"Suno task {suno_task_id} failed")
-                break
 
         async with db_session_factory() as session:
             from app.models.track import Track
@@ -84,28 +74,25 @@ async def _run_suno_generation(track_id: str, db_session_factory, track) -> None
             db_result = await session.execute(select(Track).where(Track.id == uuid.UUID(track_id)))
             db_track = db_result.scalar_one_or_none()
             if db_track:
-                db_track.status = "completed" if file_url else "failed"
-                db_track.file_url = file_url
-                db_track.duration = 180.0
+                db_track.task_id = suno_task_id
                 await session.commit()
+                logger.info(f"Suno task submitted: taskId={suno_task_id}, track={track_id}")
 
     except Exception as e:
         error_msg = f"Suno API failed: {str(e)}"
-        logger.error(f"Suno generation error for {track_id}: {error_msg}. Using mock MP3 instead.")
+        logger.error(f"Suno generation error for {track_id}: {error_msg}")
 
-        # Save error message to database
         async with db_session_factory() as session:
             try:
                 from app.models.track import Track
                 db_result = await session.execute(select(Track).where(Track.id == uuid.UUID(track_id)))
                 db_track = db_result.scalar_one_or_none()
                 if db_track:
+                    db_track.status = "failed"
                     db_track.error_message = error_msg
                     await session.commit()
             except Exception:
                 await session.rollback()
-
-        await _mock_generation(track_id, db_session_factory)
 
 
 async def _run_mureka_generation(track_id: str, db_session_factory, track) -> None:
@@ -231,47 +218,60 @@ def start_music_generation(track_id: str, background_tasks, db_session_factory) 
     return task_id
 
 
-async def _call_suno_generate(title: str, genre: str, mood: str, lyrics: str = "") -> str:
-    """POST to Suno API. Returns suno task id or mock ID on failure."""
-    prompt_parts = [p for p in [genre, mood, title, lyrics] if p]
-    prompt = ", ".join(prompt_parts)
+async def _call_suno_generate(title: str, genre: str, mood: str, lyrics: str = "", track_id: str = "") -> str:
+    """POST to sunoapi.org /api/v1/generate. Returns task ID."""
+    callback_url = f"{settings.BACKEND_CALLBACK_URL}/api/v1/music/webhook/suno"
+    tags = ", ".join(p for p in [genre, mood] if p)
+
+    # customMode=True when lyrics provided, else description mode
+    if lyrics:
+        payload = {
+            "prompt": lyrics,
+            "model": "V4",
+            "customMode": True,
+            "title": title,
+            "tags": tags,
+            "instrumental": False,
+            "callBackUrl": callback_url,
+        }
+    else:
+        prompt = ", ".join(p for p in [genre, mood, title] if p)
+        payload = {
+            "prompt": prompt,
+            "model": "V4",
+            "customMode": False,
+            "instrumental": False,
+            "callBackUrl": callback_url,
+        }
 
     async with httpx.AsyncClient(timeout=30) as client:
         try:
-            # Try official Suno API endpoint
             resp = await client.post(
-                f"{settings.SUNO_API_BASE}/api/generate",
+                f"{settings.SUNO_API_BASE}/api/v1/generate",
                 headers={"Authorization": f"Bearer {settings.SUNO_API_KEY}"},
-                json={
-                    "prompt": prompt,
-                    "model": "chirp-v3-0606",
-                },
+                json=payload,
             )
             resp.raise_for_status()
             data = resp.json()
-            return data.get("id") or data.get("clip_id") or str(uuid.uuid4())
+            if data.get("code") != 200:
+                raise Exception(data.get("msg", "Unknown error from sunoapi.org"))
+            task_id = data.get("data", {}).get("taskId")
+            if not task_id:
+                raise Exception(f"No taskId in response: {data}")
+            logger.info(f"Suno task created: taskId={task_id}")
+            return task_id
+        except httpx.HTTPStatusError as e:
+            error_detail = f"HTTP {e.response.status_code}"
+            try:
+                error_json = e.response.json()
+                error_detail = f"{error_detail}: {error_json.get('msg', e.response.text[:200])}"
+            except Exception:
+                error_detail = f"{error_detail}: {e.response.text[:200]}"
+            logger.error(f"Suno API error: {error_detail}")
+            raise Exception(error_detail) from e
         except Exception as e:
-            logger.warning(f"Suno API error: {e}. Using mock task_id.")
-            return str(uuid.uuid4())
-
-
-async def _poll_suno_task(task_id: str) -> dict:
-    """GET to poll Suno task status. Returns status and audio_url when done."""
-    async with httpx.AsyncClient(timeout=15) as client:
-        try:
-            resp = await client.get(
-                f"{settings.SUNO_API_BASE}/api/clips/{task_id}",
-                headers={"Authorization": f"Bearer {settings.SUNO_API_KEY}"},
-            )
-            resp.raise_for_status()
-            data = resp.json()
-            return {
-                "status": data.get("status", "processing"),
-                "audio_url": data.get("audio_url") or data.get("file_url"),
-            }
-        except Exception as e:
-            logger.warning(f"Suno poll error: {e}. Returning failed status.")
-            return {"status": "failed", "audio_url": None}
+            logger.error(f"Suno API error: {str(e)}")
+            raise
 
 
 async def call_suno_api(title: str, genre: str, mood: str, lyrics: str = "") -> dict:

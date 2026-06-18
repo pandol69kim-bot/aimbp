@@ -251,7 +251,14 @@ export default function MusicPage() {
                 </Button>
               </form>
               {generateMutation.isError && (
-                <p className="mt-3 text-xs text-red-400">생성에 실패했습니다. 다시 시도해주세요.</p>
+                <div className="mt-3 p-3 rounded-lg bg-red-500/10 border border-red-500/20">
+                  <p className="text-xs font-medium text-red-400 mb-1">생성에 실패했습니다</p>
+                  <p className="text-xs text-red-300/80 font-mono break-words">
+                    {generateMutation.error instanceof Error
+                      ? generateMutation.error.message
+                      : JSON.stringify(generateMutation.error)}
+                  </p>
+                </div>
               )}
             </CardContent>
           </Card>

@@ -31,16 +31,16 @@ services:
     env_file:
       - .env
     volumes:
-      - ./backend:/app
       - uploads_data:/app/uploads
     networks:
       - aimbp-network
     restart: unless-stopped
 
   frontend:
-    image: node:20-alpine
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
     container_name: aimbp-frontend
-    working_dir: /app
     ports:
       - "3001:3000"
     depends_on:
@@ -49,12 +49,9 @@ services:
       - NEXT_PUBLIC_API_URL=http://localhost:8001/api/v1
       - NODE_ENV=development
       - FORCE_COLOR=1
-    volumes:
-      - ./frontend:/app
-      - frontend_node_modules:/app/node_modules
     networks:
       - aimbp-network
-    command: sh -c "npm install && npm run dev -- --hostname 0.0.0.0"
+    command: npm run dev -- --hostname 0.0.0.0
     restart: unless-stopped
 
 volumes:
