@@ -39,9 +39,28 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
 
 
 async def init_db() -> None:
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+    await _run_migrations()
     await _seed_vocal_library()
+
+
+async def _run_migrations() -> None:
+    import subprocess
+    import sys
+    import logging as _log
+    logger = _log.getLogger(__name__)
+    result = subprocess.run(
+        [sys.executable, "-m", "alembic", "upgrade", "head"],
+        cwd="/app",
+        capture_output=True,
+        text=True,
+    )
+    for line in (result.stdout + result.stderr).splitlines():
+        if line.strip():
+            logger.info(f"[alembic] {line}")
+    if result.returncode != 0:
+        logger.warning("Alembic migration failed, falling back to create_all")
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
 
 
 async def _seed_vocal_library() -> None:
