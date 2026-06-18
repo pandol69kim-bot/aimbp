@@ -35,6 +35,8 @@ class AlbumResponse(BaseModel):
     cover_url: Optional[str]
     cover_key: Optional[str]
     status: str
+    is_locked: bool = False
+    published_at: Optional[datetime] = None
     created_at: datetime
     updated_at: datetime
     tracks: List[TrackInAlbum] = []

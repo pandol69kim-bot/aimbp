@@ -121,10 +121,39 @@ export default function AlbumDetailPage() {
     }
   }
 
+  const [isDownloading, setIsDownloading] = useState(false)
+
   const handlePublish = async () => {
     if (!album) return
-    const newStatus = album.status === 'published' ? 'draft' : 'published'
-    await updateAlbumMutation.mutateAsync({ id: albumId, data: { status: newStatus } })
+    try {
+      await api.post(`/albums/${albumId}/publish`)
+      queryClient.invalidateQueries({ queryKey: ['albums', albumId] })
+      queryClient.invalidateQueries({ queryKey: ['albums'] })
+    } catch (error: any) {
+      alert(`발행 실패: ${error.response?.data?.detail || '알 수 없는 오류'}`)
+    }
+  }
+
+  const handleDownload = async () => {
+    if (!album) return
+    setIsDownloading(true)
+    try {
+      const response = await api.get(`/albums/${albumId}/download`, {
+        responseType: 'blob'
+      })
+      const url = window.URL.createObjectURL(new Blob([response.data]))
+      const link = document.createElement('a')
+      link.href = url
+      link.setAttribute('download', `${album.title}.zip`)
+      document.body.appendChild(link)
+      link.click()
+      link.parentNode?.removeChild(link)
+      window.URL.revokeObjectURL(url)
+    } catch (error: any) {
+      alert(`다운로드 실패: ${error.response?.data?.detail || '알 수 없는 오류'}`)
+    } finally {
+      setIsDownloading(false)
+    }
   }
 
   if (isLoading) return <PageLoader label="앨범 로딩 중..." />
@@ -172,31 +201,47 @@ export default function AlbumDetailPage() {
               {sortedTracks.length}개 트랙 · 생성: {formatDate(album.created_at)}
             </p>
           </div>
-          <div className="flex gap-2 mt-4">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setIsPickCoverOpen(true)}
-            >
-              <ImageIcon className="h-3.5 w-3.5" />
-              생성된 커버 가져오기
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={handlePublish}
-              isLoading={updateAlbumMutation.isPending}
-            >
-              {album.status === 'published' ? '비공개로 전환' : '발행하기'}
-            </Button>
-            <Button
-              size="sm"
-              onClick={() => setIsAddTrackOpen(true)}
-              disabled={trackOptions.length === 0}
-            >
-              <Plus className="h-3.5 w-3.5" />
-              트랙 추가
-            </Button>
+          <div className="flex gap-2 mt-4 flex-wrap items-center">
+            {album.is_locked ? (
+              <>
+                <Button
+                  size="sm"
+                  onClick={handleDownload}
+                  isLoading={isDownloading}
+                  className="bg-green-600 hover:bg-green-700"
+                >
+                  <Download className="h-3.5 w-3.5" />
+                  앨범 다운로드 (ZIP)
+                </Button>
+                <span className="text-xs text-green-400">✅ 발행됨 · 다운로드 가능</span>
+              </>
+            ) : (
+              <>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setIsPickCoverOpen(true)}
+                >
+                  <ImageIcon className="h-3.5 w-3.5" />
+                  생성된 커버 가져오기
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handlePublish}
+                >
+                  발행하기
+                </Button>
+                <Button
+                  size="sm"
+                  onClick={() => setIsAddTrackOpen(true)}
+                  disabled={trackOptions.length === 0}
+                >
+                  <Plus className="h-3.5 w-3.5" />
+                  트랙 추가
+                </Button>
+              </>
+            )}
           </div>
         </div>
       </div>
@@ -259,7 +304,13 @@ export default function AlbumDetailPage() {
                     <StatusBadge status={track.status} />
                     <button
                       onClick={() => handleRemoveTrack(albumTrack.track_id)}
-                      className="p-1.5 text-gray-600 hover:text-red-400 hover:bg-red-900/20 rounded-lg transition-colors opacity-0 group-hover:opacity-100"
+                      disabled={album.is_locked}
+                      title={album.is_locked ? "발행된 앨범은 수정할 수 없습니다" : ""}
+                      className={`p-1.5 rounded-lg transition-colors opacity-0 group-hover:opacity-100 ${
+                        album.is_locked
+                          ? 'text-gray-700 cursor-not-allowed'
+                          : 'text-gray-600 hover:text-red-400 hover:bg-red-900/20'
+                      }`}
                     >
                       <Trash2 className="h-4 w-4" />
                     </button>

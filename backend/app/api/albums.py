@@ -1,10 +1,14 @@
 import base64
 import logging
 import os
+import io
 from typing import Any, List
 from uuid import UUID
+from datetime import datetime, timezone
+from zipfile import ZipFile, ZIP_DEFLATED
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, desc
@@ -107,6 +111,13 @@ async def update_album(
     if not album:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Album not found")
 
+    # 발행된 앨범은 수정 불가능
+    if album.is_locked:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Published albums cannot be modified"
+        )
+
     if payload.title is not None:
         album.title = payload.title
     if payload.description is not None:
@@ -195,6 +206,13 @@ async def add_track_to_album(
     if not album:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Album not found")
 
+    # 발행된 앨범에는 음원 추가 불가능
+    if album.is_locked:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Cannot add tracks to published albums"
+        )
+
     track_result = await db.execute(
         select(Track).where(Track.id == payload.track_id, Track.user_id == current_user.id)
     )
@@ -238,6 +256,13 @@ async def remove_track_from_album(
     if not album:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Album not found")
 
+    # 발행된 앨범에서 음원 삭제 불가능
+    if album.is_locked:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Cannot remove tracks from published albums"
+        )
+
     at_result = await db.execute(
         select(AlbumTrack).where(
             AlbumTrack.album_id == album_id,
@@ -251,3 +276,129 @@ async def remove_track_from_album(
             detail="Track not found in album",
         )
     await db.delete(album_track)
+
+
+@router.post("/{album_id}/publish")
+async def publish_album(
+    album_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """앨범 발행 (수정 불가능하게 잠금)"""
+    result = await db.execute(
+        select(Album).where(Album.id == album_id, Album.user_id == current_user.id)
+    )
+    album = result.scalar_one_or_none()
+    if not album:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Album not found")
+
+    # 이미 발행된 경우
+    if album.is_locked:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Album is already published"
+        )
+
+    # 발행 전 검증
+    album_tracks = await db.execute(
+        select(AlbumTrack).where(AlbumTrack.album_id == album_id)
+    )
+    tracks = album_tracks.scalars().all()
+
+    if not tracks:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Album must have at least one track"
+        )
+
+    if not album.title:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Album title is required"
+        )
+
+    if not album.cover_url:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Album cover is required"
+        )
+
+    # 발행 처리
+    album.is_locked = True
+    album.status = "published"
+    album.published_at = datetime.now(timezone.utc)
+
+    await db.flush()
+    await db.refresh(album)
+    await db.commit()
+
+    return _ok({
+        "message": "Album published successfully",
+        "album": await _build_album_response(album, db)
+    })
+
+
+@router.get("/{album_id}/download")
+async def download_album(
+    album_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """발행된 앨범을 ZIP 파일로 다운로드"""
+    result = await db.execute(
+        select(Album).where(Album.id == album_id, Album.user_id == current_user.id)
+    )
+    album = result.scalar_one_or_none()
+    if not album:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Album not found")
+
+    # 발행된 앨범만 다운로드 가능
+    if not album.is_locked:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only published albums can be downloaded"
+        )
+
+    # 앨범 트랙 조회
+    album_tracks_result = await db.execute(
+        select(AlbumTrack)
+        .where(AlbumTrack.album_id == album_id)
+        .order_by(AlbumTrack.order)
+    )
+    album_tracks = album_tracks_result.scalars().all()
+
+    # ZIP 파일 생성
+    zip_buffer = io.BytesIO()
+    with ZipFile(zip_buffer, 'w', ZIP_DEFLATED) as zip_file:
+        # 커버 아트 추가
+        if album.cover_url:
+            try:
+                # 원격 URL인 경우 간단히 참고만 하고, 로컬 파일인 경우 포함
+                if album.cover_url.startswith("/app/uploads"):
+                    with open(album.cover_url, 'rb') as f:
+                        zip_file.writestr(f"{album.title}/cover.jpg", f.read())
+            except Exception as e:
+                logger.warning(f"Could not add cover to ZIP: {e}")
+
+        # 음원 파일 추가
+        for idx, album_track in enumerate(album_tracks, 1):
+            track_result = await db.execute(
+                select(Track).where(Track.id == album_track.track_id)
+            )
+            track = track_result.scalar_one_or_none()
+            if track and track.music_file_url:
+                try:
+                    if track.music_file_url.startswith("/app/uploads"):
+                        with open(track.music_file_url, 'rb') as f:
+                            filename = f"{idx:02d}. {track.title}.mp3"
+                            zip_file.writestr(f"{album.title}/audio/{filename}", f.read())
+                except Exception as e:
+                    logger.warning(f"Could not add track {track.title} to ZIP: {e}")
+
+    zip_buffer.seek(0)
+
+    return StreamingResponse(
+        iter([zip_buffer.getvalue()]),
+        media_type="application/zip",
+        headers={"Content-Disposition": f"attachment; filename={album.title}.zip"}
+    )
