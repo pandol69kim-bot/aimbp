@@ -11,6 +11,8 @@ class VocalLibraryResponse(BaseModel):
     genre: str
     sample_url: str
     is_active: bool
+    description: Optional[str] = None
+    elevenlabs_voice_id: Optional[str] = None
 
     model_config = {"from_attributes": True}
 
@@ -30,6 +32,7 @@ class VocalResponse(BaseModel):
     file_url: Optional[str]
     file_key: Optional[str]
     status: str
+    error_message: Optional[str] = None
     created_at: datetime
 
     model_config = {"from_attributes": True}

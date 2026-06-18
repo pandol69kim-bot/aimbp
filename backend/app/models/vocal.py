@@ -18,6 +18,8 @@ class VocalLibrary(Base):
     genre: Mapped[str] = mapped_column(String(50), nullable=False)
     sample_url: Mapped[str] = mapped_column(String(1024), nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    elevenlabs_voice_id: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    description: Mapped[str | None] = mapped_column(String(500), nullable=True)
 
 
 class Vocal(Base):
@@ -39,6 +41,7 @@ class Vocal(Base):
     file_url: Mapped[str | None] = mapped_column(String(1024), nullable=True)
     file_key: Mapped[str | None] = mapped_column(String(512), nullable=True)
     status: Mapped[str] = mapped_column(String(50), nullable=False, default="pending")
+    error_message: Mapped[str | None] = mapped_column(String(1024), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),

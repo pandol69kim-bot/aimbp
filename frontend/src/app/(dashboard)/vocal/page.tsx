@@ -45,7 +45,7 @@ export default function VocalPage() {
   })
 
   const generateMutation = useMutation({
-    mutationFn: async (data: { track_id: string; vocal_id: string; language: string }) => {
+    mutationFn: async (data: { track_id: string; library_id: string; language: string }) => {
       const res = await api.post('/vocal/generate', data)
       return res.data
     },
@@ -60,7 +60,7 @@ export default function VocalPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!selectedTrackId || !selectedVocalId) return
-    await generateMutation.mutateAsync({ track_id: selectedTrackId, vocal_id: selectedVocalId, language })
+    await generateMutation.mutateAsync({ track_id: selectedTrackId, library_id: selectedVocalId, language })
   }
 
   if (libraryLoading || tracksLoading) return <PageLoader label="보컬 데이터 로딩 중..." />
@@ -200,7 +200,7 @@ export default function VocalPage() {
             <div className="space-y-3">
               {vocalTracks.map((vt) => {
                 const track = tracks?.find((t) => t.id === vt.track_id)
-                const vocal = vocalLibrary?.find((v) => v.id === vt.vocal_id)
+                const vocal = vocalLibrary?.find((v) => v.id === vt.library_id)
                 return (
                   <Card key={vt.id} className="hover:border-white/20 transition-colors">
                     <CardContent className="p-4">

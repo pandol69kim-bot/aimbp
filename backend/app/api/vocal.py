@@ -31,8 +31,13 @@ async def get_vocal_library(
     items = result.scalars().all()
 
     if not items:
-        # Seed with sample data if empty
-        return _ok(SAMPLE_VOCAL_LIBRARY)
+        for entry in SAMPLE_VOCAL_LIBRARY:
+            db.add(VocalLibrary(**entry))
+        await db.commit()
+        result = await db.execute(
+            select(VocalLibrary).where(VocalLibrary.is_active == True)
+        )
+        items = result.scalars().all()
 
     return _ok([VocalLibraryResponse.model_validate(item).model_dump() for item in items])
 
@@ -80,6 +85,20 @@ async def generate_vocal(
     start_vocal_processing(str(vocal.id), background_tasks, AsyncSessionLocal)
 
     return _ok(VocalResponse.model_validate(vocal).model_dump())
+
+
+@router.get("")
+async def list_vocals(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(
+        select(Vocal)
+        .where(Vocal.user_id == current_user.id)
+        .order_by(desc(Vocal.created_at))
+    )
+    items = result.scalars().all()
+    return _ok([VocalResponse.model_validate(item).model_dump() for item in items])
 
 
 @router.get("/{vocal_id}")

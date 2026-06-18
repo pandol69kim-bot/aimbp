@@ -33,6 +33,10 @@ class Settings(BaseSettings):
     MUREKA_API_KEY: str = ""
     MUREKA_API_BASE: str = "https://api.mureka.ai"
 
+    # ElevenLabs
+    ELEVENLABS_API_KEY: str = ""
+    ELEVENLABS_API_BASE: str = "https://api.elevenlabs.io"
+
     # AWS S3
     AWS_ACCESS_KEY_ID: str = ""
     AWS_SECRET_ACCESS_KEY: str = ""
@@ -69,6 +73,10 @@ class Settings(BaseSettings):
     @property
     def has_mureka(self) -> bool:
         return bool(self.MUREKA_API_KEY and self.MUREKA_API_KEY != "your-mureka-api-key")
+
+    @property
+    def has_elevenlabs(self) -> bool:
+        return bool(self.ELEVENLABS_API_KEY and self.ELEVENLABS_API_KEY != "your-elevenlabs-api-key")
 
     @property
     def has_s3(self) -> bool:

@@ -67,18 +67,20 @@ export interface VocalLibrary {
   name: string
   gender: 'male' | 'female' | 'neutral'
   genre: string
-  language: string
+  language?: string
   sample_url?: string
   description?: string
+  elevenlabs_voice_id?: string
 }
 
 export interface VocalTrack {
   id: string
   track_id: string
-  vocal_id: string
+  library_id: string
   language: string
   file_url?: string
   status: 'pending' | 'processing' | 'completed' | 'failed'
+  error_message?: string
   created_at: string
 }
 
@@ -175,7 +177,7 @@ export interface ArrangementGenerateRequest {
 
 export interface VocalGenerateRequest {
   track_id: string
-  vocal_id: string
+  library_id: string
   language: string
 }
 
