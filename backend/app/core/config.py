@@ -28,6 +28,7 @@ class Settings(BaseSettings):
     SUNO_API_KEY: str = ""
     SUNO_API_BASE: str = "https://api.sunoapi.org"
     BACKEND_CALLBACK_URL: str = "http://localhost:8001"
+    FILE_BASE_URL: str = "http://localhost:8001"
 
     # Mureka
     MUREKA_API_KEY: str = ""

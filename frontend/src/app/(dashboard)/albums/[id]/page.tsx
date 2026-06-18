@@ -2,13 +2,12 @@
 
 import { useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
-import { ArrowLeft, Plus, Trash2, GripVertical, Image as ImageIcon, Music, Sparkles, Download } from 'lucide-react'
-import { useQuery, useMutation } from '@tanstack/react-query'
+import { ArrowLeft, Plus, Trash2, GripVertical, Image as ImageIcon, Music, Download, CheckCircle2 } from 'lucide-react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import api from '@/lib/api'
 import { useAlbumById, useAddTrackToAlbum, useRemoveTrackFromAlbum, useUpdateAlbum } from '@/hooks/useAlbums'
 import { useTrackList } from '@/hooks/useMusic'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Dialog, DialogHeader, DialogBody, DialogFooter } from '@/components/ui/dialog'
@@ -19,6 +18,44 @@ import { Badge } from '@/components/ui/badge'
 import { CoverImage } from '@/types'
 import { formatDate } from '@/lib/utils'
 
+interface CoverGroup {
+  key: string
+  genre: string
+  mood: string
+  keywords: string
+  ai_model: string
+  created_at: string
+  images: Array<{ ratio: '1:1' | '16:9' | '9:16'; url: string; cover_id: string }>
+}
+
+function groupCompletedCovers(covers: CoverImage[]): CoverGroup[] {
+  const map = new Map<string, CoverGroup>()
+  covers
+    .filter((c) => c.status === 'completed' && c.image_url)
+    .forEach((c) => {
+      const key = `${c.created_at}-${c.prompt_genre}-${c.prompt_mood}`
+      if (!map.has(key)) {
+        map.set(key, {
+          key,
+          genre: c.prompt_genre || c.genre,
+          mood: c.prompt_mood || c.mood,
+          keywords: c.prompt_keywords || c.keywords,
+          ai_model: c.ai_model,
+          created_at: c.created_at,
+          images: [],
+        })
+      }
+      map.get(key)!.images.push({
+        ratio: c.size as '1:1' | '16:9' | '9:16',
+        url: c.image_url!,
+        cover_id: c.id,
+      })
+    })
+  return Array.from(map.values()).sort(
+    (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+  )
+}
+
 export default function AlbumDetailPage() {
   const params = useParams()
   const router = useRouter()
@@ -26,90 +63,43 @@ export default function AlbumDetailPage() {
 
   const { data: album, isLoading } = useAlbumById(albumId)
   const { data: allTracks } = useTrackList()
+  const queryClient = useQueryClient()
   const addTrackMutation = useAddTrackToAlbum()
   const removeTrackMutation = useRemoveTrackFromAlbum()
   const updateAlbumMutation = useUpdateAlbum()
 
   const [isAddTrackOpen, setIsAddTrackOpen] = useState(false)
   const [selectedTrackId, setSelectedTrackId] = useState('')
-  const [isGenerateCoverOpen, setIsGenerateCoverOpen] = useState(false)
-  const [coverGenre, setCoverGenre] = useState('')
-  const [coverMood, setCoverMood] = useState('')
-  const [coverKeywords, setCoverKeywords] = useState('')
 
-  // Fetch covers for this album
+  const [isPickCoverOpen, setIsPickCoverOpen] = useState(false)
+  const [selectedCoverUrl, setSelectedCoverUrl] = useState<string | null>(null)
+  const [selectedCoverId, setSelectedCoverId] = useState<string | null>(null)
+  const [isApplyingCover, setIsApplyingCover] = useState(false)
+
   const { data: allCovers } = useQuery({
     queryKey: ['covers'],
     queryFn: async () => {
       const res = await api.get<CoverImage[]>('/cover')
       return res.data
     },
+    enabled: isPickCoverOpen,
   })
 
-  const albumCovers = allCovers?.filter(c => c.album_id === albumId) || []
+  const coverGroups = allCovers ? groupCompletedCovers(allCovers) : []
 
-  // Group covers by prompt (same prompt = 3 sizes)
-  const groupedCovers = albumCovers.reduce((acc, cover) => {
-    const key = `${cover.prompt_genre}-${cover.prompt_mood}-${cover.prompt_keywords}`
-    const existing = acc.find(g => g.key === key)
-    if (existing) {
-      existing.images.push({
-        ratio: cover.size as '1:1' | '16:9' | '9:16',
-        url: cover.image_url || '',
-      })
-    } else {
-      acc.push({
-        key,
-        prompt_genre: cover.prompt_genre,
-        prompt_mood: cover.prompt_mood,
-        prompt_keywords: cover.prompt_keywords,
-        status: cover.status,
-        images: cover.image_url ? [{
-          ratio: cover.size as '1:1' | '16:9' | '9:16',
-          url: cover.image_url,
-        }] : [],
-      })
+  const handleApplyCover = async () => {
+    if (!selectedCoverId) return
+    setIsApplyingCover(true)
+    try {
+      await api.post(`/albums/${albumId}/cover`, { cover_id: selectedCoverId })
+      queryClient.invalidateQueries({ queryKey: ['albums', albumId] })
+      queryClient.invalidateQueries({ queryKey: ['albums'] })
+      setIsPickCoverOpen(false)
+      setSelectedCoverUrl(null)
+      setSelectedCoverId(null)
+    } finally {
+      setIsApplyingCover(false)
     }
-    return acc
-  }, [] as Array<{
-    key: string
-    prompt_genre: string
-    prompt_mood: string
-    prompt_keywords: string
-    status: string
-    images: Array<{ ratio: '1:1' | '16:9' | '9:16', url: string }>
-  }>)
-
-  // Generate cover mutation
-  const generateCoverMutation = useMutation({
-    mutationFn: async (data: { genre: string; mood: string; keywords: string; ai_model: string; album_id: string }) => {
-      const res = await api.post('/cover/generate', {
-        prompt_genre: data.genre,
-        prompt_mood: data.mood,
-        prompt_keywords: data.keywords,
-        ai_model: data.ai_model,
-        album_id: data.album_id,
-      })
-      return res.data
-    },
-    onSuccess: () => {
-      setCoverGenre('')
-      setCoverMood('')
-      setCoverKeywords('')
-      setIsGenerateCoverOpen(false)
-    },
-  })
-
-  const handleGenerateCover = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!coverGenre || !coverMood || !coverKeywords) return
-    await generateCoverMutation.mutateAsync({
-      genre: coverGenre,
-      mood: coverMood,
-      keywords: coverKeywords,
-      ai_model: 'dalle-3',
-      album_id: albumId,
-    })
   }
 
   const completedTracks = allTracks?.filter((t) => t.status === 'completed') || []
@@ -186,10 +176,10 @@ export default function AlbumDetailPage() {
             <Button
               variant="outline"
               size="sm"
-              onClick={() => setIsGenerateCoverOpen(true)}
+              onClick={() => setIsPickCoverOpen(true)}
             >
-              <Sparkles className="h-3.5 w-3.5" />
-              커버 생성
+              <ImageIcon className="h-3.5 w-3.5" />
+              생성된 커버 가져오기
             </Button>
             <Button
               variant="outline"
@@ -210,84 +200,6 @@ export default function AlbumDetailPage() {
           </div>
         </div>
       </div>
-
-      {/* Cover List */}
-      {groupedCovers.length > 0 && (
-        <Card className="mb-6">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <ImageIcon className="h-4 w-4 text-primary-400" />
-              생성 이력
-              <Badge variant="outline" className="ml-1">{groupedCovers.length}</Badge>
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="space-y-4">
-              {groupedCovers.map((coverGroup) => (
-                <div key={coverGroup.key} className="border border-white/5 rounded-lg p-4 hover:border-white/10 transition-colors">
-                  <div className="flex items-start justify-between mb-3">
-                    <div>
-                      <p className="text-sm font-medium text-white">
-                        {coverGroup.prompt_genre} · {coverGroup.prompt_mood}
-                      </p>
-                      <p className="text-xs text-gray-500 mt-1">
-                        {coverGroup.prompt_keywords}
-                      </p>
-                    </div>
-                    <StatusBadge status={coverGroup.status} />
-                  </div>
-
-                  {coverGroup.status === 'completed' && coverGroup.images.length > 0 && (
-                    <div className="grid grid-cols-3 gap-3">
-                      {coverGroup.images.map((img) => (
-                        <div key={img.ratio} className="group relative">
-                          <div
-                            className={`relative overflow-hidden rounded-lg bg-white/5 ${
-                              img.ratio === '1:1'
-                                ? 'aspect-square'
-                                : img.ratio === '16:9'
-                                ? 'aspect-video'
-                                : 'aspect-[9/16]'
-                            }`}
-                          >
-                            {img.url ? (
-                              <>
-                                {/* eslint-disable-next-line @next/next/no-img-element */}
-                                <img
-                                  src={img.url}
-                                  alt={`Cover ${img.ratio}`}
-                                  className="h-full w-full object-cover"
-                                />
-                                <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                                  <a
-                                    href={img.url}
-                                    download={`cover-${img.ratio}`}
-                                    className="flex items-center gap-1.5 rounded-lg bg-primary-500/90 px-3 py-1.5 text-xs text-white hover:bg-primary-600 transition-colors"
-                                  >
-                                    <Download className="h-3.5 w-3.5" />
-                                    다운로드
-                                  </a>
-                                </div>
-                              </>
-                            ) : (
-                              <div className="flex items-center justify-center h-full bg-white/5">
-                                <ImageIcon className="h-6 w-6 text-gray-600" />
-                              </div>
-                            )}
-                          </div>
-                          <p className="mt-1.5 text-center text-xs text-gray-500">
-                            {img.ratio}
-                          </p>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-      )}
 
       {/* Track List */}
       <Card>
@@ -359,63 +271,78 @@ export default function AlbumDetailPage() {
         </CardContent>
       </Card>
 
-      {/* Generate Cover Dialog */}
-      <Dialog open={isGenerateCoverOpen} onClose={() => setIsGenerateCoverOpen(false)}>
-        <DialogHeader title="커버 생성" onClose={() => setIsGenerateCoverOpen(false)} />
+      {/* Pick Cover Dialog */}
+      <Dialog open={isPickCoverOpen} onClose={() => { setIsPickCoverOpen(false); setSelectedCoverUrl(null); setSelectedCoverId(null) }}>
+        <DialogHeader title="생성된 커버 가져오기" onClose={() => { setIsPickCoverOpen(false); setSelectedCoverUrl(null); setSelectedCoverId(null) }} />
         <DialogBody>
-          <form id="generate-cover-form" onSubmit={handleGenerateCover} className="space-y-4">
-            <Select
-              label="장르"
-              options={[
-                { value: 'pop', label: 'Pop' },
-                { value: 'kpop', label: 'K-Pop' },
-                { value: 'rock', label: 'Rock' },
-                { value: 'electronic', label: 'Electronic' },
-                { value: 'hiphop', label: 'Hip-Hop' },
-              ]}
-              placeholder="장르 선택"
-              value={coverGenre}
-              onChange={(e) => setCoverGenre(e.target.value)}
-              required
-            />
-            <Select
-              label="분위기"
-              options={[
-                { value: 'dreamy', label: '몽환적' },
-                { value: 'energetic', label: '에너제틱' },
-                { value: 'dark', label: '다크' },
-                { value: 'romantic', label: '로맨틱' },
-                { value: 'minimalist', label: '미니멀리스트' },
-              ]}
-              placeholder="분위기 선택"
-              value={coverMood}
-              onChange={(e) => setCoverMood(e.target.value)}
-              required
-            />
-            <Input
-              label="키워드"
-              placeholder="ex) 야경, 도시, 별빛"
-              value={coverKeywords}
-              onChange={(e) => setCoverKeywords(e.target.value)}
-              required
-            />
-          </form>
-          <p className="text-xs text-gray-500 mt-4 text-center">
-            1:1, 16:9, 9:16 3가지 비율로 생성됩니다
-          </p>
+          {coverGroups.length === 0 ? (
+            <div className="flex flex-col items-center py-10 text-center">
+              <ImageIcon className="h-10 w-10 text-gray-600 mb-3" />
+              <p className="text-sm text-gray-400">생성된 커버가 없습니다</p>
+              <p className="text-xs text-gray-500 mt-1">
+                커버 생성 페이지에서 먼저 커버를 만들어주세요
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-4 max-h-[60vh] overflow-y-auto pr-1">
+              {coverGroups.map((group) => (
+                <div key={group.key} className="border border-white/5 rounded-lg p-3">
+                  <p className="text-xs text-gray-400 mb-2 font-medium">
+                    {group.genre} · {group.mood}
+                    {group.keywords && <span className="text-gray-600"> · {group.keywords}</span>}
+                  </p>
+                  <div className="grid grid-cols-3 gap-2">
+                    {group.images.map((img) => {
+                      const isSelected = selectedCoverUrl === img.url
+                      return (
+                        <button
+                          key={img.ratio}
+                          onClick={() => { setSelectedCoverUrl(img.url); setSelectedCoverId(img.cover_id) }}
+                          className={`group relative rounded-lg overflow-hidden transition-all focus:outline-none ${
+                            isSelected
+                              ? 'ring-2 ring-primary-500 ring-offset-1 ring-offset-dark-900'
+                              : 'hover:ring-1 hover:ring-white/30'
+                          }`}
+                        >
+                          <div className={`relative bg-white/5 ${
+                            img.ratio === '1:1' ? 'aspect-square' :
+                            img.ratio === '16:9' ? 'aspect-video' : 'aspect-[9/16]'
+                          }`}>
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img
+                              src={img.url}
+                              alt={`Cover ${img.ratio}`}
+                              className="h-full w-full object-cover"
+                            />
+                            {isSelected && (
+                              <div className="absolute inset-0 bg-primary-500/20 flex items-center justify-center">
+                                <CheckCircle2 className="h-6 w-6 text-primary-400 drop-shadow" />
+                              </div>
+                            )}
+                            <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 to-transparent py-1">
+                              <p className="text-center text-xs text-gray-300">{img.ratio}</p>
+                            </div>
+                          </div>
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </DialogBody>
         <DialogFooter>
-          <Button variant="outline" onClick={() => setIsGenerateCoverOpen(false)}>
+          <Button variant="outline" onClick={() => { setIsPickCoverOpen(false); setSelectedCoverUrl(null); setSelectedCoverId(null) }}>
             취소
           </Button>
           <Button
-            type="submit"
-            form="generate-cover-form"
-            isLoading={generateCoverMutation.isPending}
-            disabled={!coverGenre || !coverMood || !coverKeywords}
+            onClick={handleApplyCover}
+            disabled={!selectedCoverId}
+            isLoading={isApplyingCover}
           >
-            <Sparkles className="h-4 w-4" />
-            커버 생성
+            <CheckCircle2 className="h-4 w-4" />
+            앨범에 적용
           </Button>
         </DialogFooter>
       </Dialog>

@@ -90,7 +90,7 @@ async def delete_file_endpoint(
     del _file_registry[file_id]
 
 
-@router.get("/local/{filename}")
+@router.get("/local/{filename:path}")
 async def serve_local_file(filename: str):
     """Serve locally stored files (dev mode fallback)."""
     file_path = UPLOADS_DIR / filename

@@ -36,8 +36,8 @@ const moodOptions = [
 ]
 
 const aiModelOptions = [
+  { value: 'gpt-image-1', label: 'GPT Image 1 (최신)' },
   { value: 'dalle-3', label: 'DALL-E 3' },
-  { value: 'midjourney', label: 'Midjourney' },
   { value: 'stable-diffusion', label: 'Stable Diffusion' },
 ]
 
@@ -101,7 +101,7 @@ export default function CoverPage() {
   const [genre, setGenre] = useState('')
   const [mood, setMood] = useState('')
   const [keywords, setKeywords] = useState('')
-  const [aiModel, setAiModel] = useState('dalle-3')
+  const [aiModel, setAiModel] = useState('gpt-image-1')
 
   const { data: rawCovers, isLoading } = useQuery({
     queryKey: ['covers'],

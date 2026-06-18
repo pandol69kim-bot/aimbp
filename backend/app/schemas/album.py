@@ -13,6 +13,7 @@ class AlbumUpdate(BaseModel):
     title: Optional[str] = Field(default=None, min_length=1, max_length=255)
     description: Optional[str] = None
     status: Optional[str] = None
+    cover_url: Optional[str] = None
 
 
 class AddTrackRequest(BaseModel):

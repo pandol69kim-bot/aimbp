@@ -15,7 +15,7 @@ from app.services.mastering import start_mastering_processing
 
 router = APIRouter(prefix="/mastering", tags=["mastering"])
 
-VALID_PLATFORMS = {"spotify", "apple_music", "youtube", "soundcloud", "tidal"}
+VALID_PLATFORMS = {"spotify", "apple_music", "youtube_music"}
 
 
 def _ok(data: Any) -> dict:

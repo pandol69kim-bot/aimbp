@@ -1,13 +1,6 @@
-npm error syscall open
+Unhandled Runtime Error
+AxiosError: Network Error
 
-npm error path /app/package.json
-
-npm error errno -2
-
-npm error enoent Could not read package.json: Error: ENOENT: no such file or directory, open '/app/package.json'
-
-npm error enoent This is related to npm not being able to find a file.
-
-npm error enoent
-
-npm error A complete log of this run can be found in: /root/.npm/_logs/2026-06-18T00_50_09_345Z-debug-0.log
+Call Stack
+XMLHttpRequest.handleError
+node_modules/axios/lib/adapters/xhr.js (124:1)

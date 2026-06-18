@@ -22,6 +22,12 @@ SIZE_MAP = {
     "9:16": "1024x1792",
 }
 
+GPT_IMAGE_1_SIZE_MAP = {
+    "1:1": "1024x1024",
+    "16:9": "1536x1024",
+    "9:16": "1024x1536",
+}
+
 
 async def generate_cover_image(
     prompt_genre: str,
@@ -30,13 +36,20 @@ async def generate_cover_image(
     size: str = "1:1",
     ai_model: str = "dalle-3",
 ) -> str:
-    """Generate a cover image. Tries: OpenAI → Stable Diffusion → Mock."""
-    if ai_model in ("dalle-3", "gpt-image") and settings.has_openai:
-        result = await _generate_openai_image(
-            prompt_genre, prompt_mood, prompt_keywords, size
-        )
-        if result:
-            return result
+    """Generate a cover image. Tries: gpt-image-1 / dalle-3 → Stable Diffusion → Mock."""
+    if settings.has_openai:
+        if ai_model == "gpt-image-1":
+            result = await _generate_gpt_image_1(
+                prompt_genre, prompt_mood, prompt_keywords, size
+            )
+            if result:
+                return result
+        elif ai_model in ("dalle-3", "gpt-image"):
+            result = await _generate_openai_image(
+                prompt_genre, prompt_mood, prompt_keywords, size
+            )
+            if result:
+                return result
 
     result = await _generate_stable_diffusion_image(
         prompt_genre, prompt_mood, prompt_keywords, size
@@ -146,6 +159,74 @@ async def _generate_openai_image(
         return None
 
 
+async def _generate_gpt_image_1(
+    prompt_genre: str,
+    prompt_mood: str,
+    prompt_keywords: str,
+    size: str,
+) -> str | None:
+    try:
+        from openai import AsyncOpenAI
+
+        client = AsyncOpenAI(api_key=settings.OPENAI_API_KEY)
+
+        prompt = (
+            f"Album cover art for a {prompt_genre} music album. "
+            f"Mood: {prompt_mood}. "
+            f"Keywords: {prompt_keywords}. "
+            f"Professional, high quality, artistic album artwork."
+        )
+
+        gpt_size = GPT_IMAGE_1_SIZE_MAP.get(size, "1024x1024")
+
+        response = await client.images.generate(
+            model="gpt-image-1",
+            prompt=prompt,
+            size=gpt_size,
+            quality="high",
+            n=1,
+        )
+
+        # gpt-image-1은 b64_json으로 반환
+        b64_data = response.data[0].b64_json
+        if b64_data:
+            logger.info(f"gpt-image-1 generated image for size {size}")
+            return f"data:image/png;base64,{b64_data}"
+
+        # url 형식으로 반환된 경우
+        if response.data[0].url:
+            return response.data[0].url
+
+        return None
+
+    except Exception as e:
+        logger.warning(f"gpt-image-1 generation failed: {e}")
+        return None
+
+
+async def _save_cover_to_file(cover_id: str, size: str, image_url: str) -> str:
+    """If image_url is base64, decode and save to file. Returns final URL."""
+    if not image_url.startswith("data:image/"):
+        return image_url
+    try:
+        import os
+        from app.core.config import settings
+        _, b64_data = image_url.split(",", 1)
+        img_bytes = base64.b64decode(b64_data)
+        covers_dir = "/app/uploads/covers"
+        os.makedirs(covers_dir, exist_ok=True)
+        size_key = size.replace(":", "x")
+        filename = f"cover_{cover_id}_{size_key}.png"
+        with open(f"{covers_dir}/{filename}", "wb") as f:
+            f.write(img_bytes)
+        url = f"{settings.FILE_BASE_URL}/api/v1/files/local/covers/{filename}"
+        logger.info(f"Saved cover image: {filename}")
+        return url
+    except Exception as e:
+        logger.warning(f"Failed to save cover to file, keeping base64: {e}")
+        return image_url
+
+
 async def _process_cover(cover_id: str, db_session_factory) -> None:
     """Background task: generate cover image and update DB."""
     async with db_session_factory() as session:
@@ -165,8 +246,9 @@ async def _process_cover(cover_id: str, db_session_factory) -> None:
                     cover.size,
                     cover.ai_model,
                 )
+                image_url = await _save_cover_to_file(cover_id, cover.size, image_url)
                 cover.image_url = image_url
-                cover.image_key = f"covers/{cover_id}_{cover.size.replace(':', 'x')}.png"
+                cover.image_key = f"covers/cover_{cover_id}_{cover.size.replace(':', 'x')}.png"
                 cover.status = "completed"
                 await session.commit()
                 logger.info(f"Cover {cover_id} ({cover.size}) completed")

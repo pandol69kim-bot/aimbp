@@ -106,13 +106,19 @@ export interface AudioInfo {
 
 export interface CoverImage {
   id: string
-  genre: string
-  mood: string
-  keywords: string
+  prompt_genre: string
+  prompt_mood: string
+  prompt_keywords: string
   ai_model: string
-  images: CoverVariant[]
+  image_url?: string
+  size: '1:1' | '16:9' | '9:16'
   status: 'pending' | 'processing' | 'completed' | 'failed'
   created_at: string
+  album_id?: string
+  // 하위 호환
+  genre?: string
+  mood?: string
+  keywords?: string
 }
 
 export interface CoverVariant {

@@ -1,16 +1,28 @@
+import base64
+import logging
+import os
 from typing import Any, List
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, desc
 
+from app.core.config import settings
 from app.core.database import get_db
 from app.core.security import get_current_user
 from app.models.user import User
 from app.models.album import Album, AlbumTrack
+from app.models.cover import Cover
 from app.models.track import Track
 from app.schemas.album import AlbumCreate, AlbumUpdate, AlbumResponse, AddTrackRequest, TrackInAlbum
+
+logger = logging.getLogger(__name__)
+
+
+class ApplyCoverRequest(BaseModel):
+    cover_id: str
 
 router = APIRouter(prefix="/albums", tags=["albums"])
 
@@ -101,7 +113,54 @@ async def update_album(
         album.description = payload.description
     if payload.status is not None:
         album.status = payload.status
+    if payload.cover_url is not None:
+        album.cover_url = payload.cover_url
 
+    await db.flush()
+    await db.refresh(album)
+    return _ok(await _build_album_response(album, db))
+
+
+@router.post("/{album_id}/cover")
+async def apply_cover_to_album(
+    album_id: UUID,
+    payload: ApplyCoverRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    result = await db.execute(
+        select(Album).where(Album.id == album_id, Album.user_id == current_user.id)
+    )
+    album = result.scalar_one_or_none()
+    if not album:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Album not found")
+
+    cover_result = await db.execute(
+        select(Cover).where(Cover.id == UUID(payload.cover_id), Cover.user_id == current_user.id)
+    )
+    cover = cover_result.scalar_one_or_none()
+    if not cover:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Cover not found")
+
+    image_url = cover.image_url
+    if image_url and image_url.startswith("data:image/"):
+        try:
+            _, b64_data = image_url.split(",", 1)
+            img_bytes = base64.b64decode(b64_data)
+            covers_dir = "/app/uploads/covers"
+            os.makedirs(covers_dir, exist_ok=True)
+            size_key = cover.size.replace(":", "x")
+            filename = f"cover_{cover.id}_{size_key}.png"
+            with open(f"{covers_dir}/{filename}", "wb") as f:
+                f.write(img_bytes)
+            image_url = f"{settings.FILE_BASE_URL}/api/v1/files/local/covers/{filename}"
+            cover.image_url = image_url
+            await db.flush()
+            logger.info(f"Saved cover {cover.id} to file: {filename}")
+        except Exception as e:
+            logger.warning(f"Failed to save cover image file: {e}")
+
+    album.cover_url = image_url
     await db.flush()
     await db.refresh(album)
     return _ok(await _build_album_response(album, db))

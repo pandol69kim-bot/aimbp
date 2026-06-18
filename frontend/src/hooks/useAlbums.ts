@@ -71,7 +71,7 @@ export function useUpdateAlbum() {
   const queryClient = useQueryClient()
 
   return useMutation({
-    mutationFn: async ({ id, data }: { id: string; data: Partial<CreateAlbumRequest & { status: string }> }) => {
+    mutationFn: async ({ id, data }: { id: string; data: Partial<CreateAlbumRequest & { status: string; cover_url: string }> }) => {
       const response = await api.patch<ApiResponse<Album>>(`/albums/${id}`, data)
       return response.data
     },
