@@ -1,7 +1,8 @@
 'use client'
 
-import { Bell, Search } from 'lucide-react'
+import { Bell, Search, Menu } from 'lucide-react'
 import { usePathname } from 'next/navigation'
+import { useSidebarStore } from '@/stores/sidebarStore'
 
 const pageTitles: Record<string, string> = {
   '/dashboard': '대시보드',
@@ -24,10 +25,19 @@ function getPageTitle(pathname: string): string {
 export function Header() {
   const pathname = usePathname()
   const title = getPageTitle(pathname)
+  const { toggleSidebar } = useSidebarStore()
 
   return (
-    <header className="flex h-16 items-center justify-between border-b border-white/10 bg-dark-900/50 px-6 backdrop-blur-md">
-      <h2 className="text-lg font-semibold text-white">{title}</h2>
+    <header className="flex h-16 items-center justify-between border-b border-white/10 bg-dark-900/50 px-4 sm:px-6 backdrop-blur-md">
+      <div className="flex items-center gap-3 flex-1">
+        <button
+          onClick={toggleSidebar}
+          className="lg:hidden flex h-9 w-9 items-center justify-center rounded-lg border border-white/10 bg-white/5 text-gray-400 hover:text-white hover:bg-white/10 transition-colors"
+        >
+          <Menu className="h-4 w-4" />
+        </button>
+        <h2 className="text-lg font-semibold text-white">{title}</h2>
+      </div>
       <div className="flex items-center gap-3">
         <div className="relative hidden sm:block">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-500" />
