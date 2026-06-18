@@ -130,7 +130,9 @@ export default function AlbumDetailPage() {
       queryClient.invalidateQueries({ queryKey: ['albums', albumId] })
       queryClient.invalidateQueries({ queryKey: ['albums'] })
     } catch (error: any) {
-      alert(`발행 실패: ${error.response?.data?.detail || '알 수 없는 오류'}`)
+      console.error('Publish error:', error)
+      const errorDetail = error.response?.data?.detail || error.message || '알 수 없는 오류'
+      alert(`발행 실패: ${errorDetail}`)
     }
   }
 
@@ -150,7 +152,9 @@ export default function AlbumDetailPage() {
       link.parentNode?.removeChild(link)
       window.URL.revokeObjectURL(url)
     } catch (error: any) {
-      alert(`다운로드 실패: ${error.response?.data?.detail || '알 수 없는 오류'}`)
+      console.error('Download error:', error)
+      const errorDetail = error.response?.data?.detail || error.message || '알 수 없는 오류'
+      alert(`다운로드 실패: ${errorDetail}`)
     } finally {
       setIsDownloading(false)
     }

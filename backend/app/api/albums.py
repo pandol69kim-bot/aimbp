@@ -386,10 +386,10 @@ async def download_album(
                 select(Track).where(Track.id == album_track.track_id)
             )
             track = track_result.scalar_one_or_none()
-            if track and track.music_file_url:
+            if track and track.file_url:
                 try:
-                    if track.music_file_url.startswith("/app/uploads"):
-                        with open(track.music_file_url, 'rb') as f:
+                    if track.file_url.startswith("/app/uploads"):
+                        with open(track.file_url, 'rb') as f:
                             filename = f"{idx:02d}. {track.title}.mp3"
                             zip_file.writestr(f"{album.title}/audio/{filename}", f.read())
                 except Exception as e:
@@ -400,5 +400,7 @@ async def download_album(
     return StreamingResponse(
         iter([zip_buffer.getvalue()]),
         media_type="application/zip",
-        headers={"Content-Disposition": f"attachment; filename={album.title}.zip"}
+        headers={
+            "Content-Disposition": "attachment; filename=album.zip"
+        }
     )
