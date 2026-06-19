@@ -122,44 +122,23 @@ async def upload_lyrics_md(
             detail="File is empty"
         )
 
-    # MD 파일 파싱
+    # MD 파일 내용 그대로 사용
     text = content.decode('utf-8')
 
-    # 간단한 MD 파싱 로직
-    lines = text.split('\n')
+    # 제목 추출 (파일명 또는 첫 번째 # 라인)
     title = file.filename.replace('.md', '')
-    verse = ""
+    lines = text.split('\n')
+    for line in lines:
+        stripped = line.strip()
+        if stripped.startswith('# '):
+            title = stripped.replace('# ', '').strip()
+            break
+
+    # 전체 내용을 verse에 저장 (원본 그대로)
+    verse = text
     chorus = ""
     bridge = ""
     hook = ""
-
-    current_section = None
-    for line in lines:
-        line = line.strip()
-
-        # 섹션 헤더 감지
-        if line.startswith('## Verse') or line.startswith('# Verse'):
-            current_section = 'verse'
-        elif line.startswith('## Chorus') or line.startswith('# Chorus'):
-            current_section = 'chorus'
-        elif line.startswith('## Bridge') or line.startswith('# Bridge'):
-            current_section = 'bridge'
-        elif line.startswith('## Hook') or line.startswith('# Hook'):
-            current_section = 'hook'
-        elif line.startswith('## Title') or line.startswith('# Title'):
-            # 제목 파싱
-            if ':' in line:
-                title = line.split(':', 1)[1].strip()
-        elif line and not line.startswith('#'):
-            # 섹션에 내용 추가
-            if current_section == 'verse':
-                verse += line + '\n'
-            elif current_section == 'chorus':
-                chorus += line + '\n'
-            elif current_section == 'bridge':
-                bridge += line + '\n'
-            elif current_section == 'hook':
-                hook += line + '\n'
 
     # 가사 생성
     lyrics = Lyrics(

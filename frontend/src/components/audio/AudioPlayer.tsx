@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useRef, useEffect, useCallback } from 'react'
-import { Play, Pause, Volume2, VolumeX, Loader2 } from 'lucide-react'
+import { Play, Pause, Volume2, VolumeX, Loader2, AlertCircle } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { formatDuration } from '@/lib/utils'
 
@@ -21,33 +21,51 @@ export function AudioPlayer({ src, title, status, className, compact = false }: 
   const [volume, setVolume] = useState(1)
   const [isMuted, setIsMuted] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
+  const [hasError, setHasError] = useState(false)
 
   const isDisabled = !src || status === 'processing' || status === 'pending' || status === 'failed'
 
+  // src가 바뀔 때마다 이벤트 리스너 재등록 + 오디오 리로드
   useEffect(() => {
     const audio = audioRef.current
     if (!audio) return
 
+    // src 변경 시 상태 초기화 후 리로드
+    setCurrentTime(0)
+    setDuration(0)
+    setIsPlaying(false)
+    setHasError(false)
+    audio.load()
+
     const handleTimeUpdate = () => setCurrentTime(audio.currentTime)
-    const handleDurationChange = () => setDuration(audio.duration)
+    const handleDurationChange = () => {
+      if (audio.duration && isFinite(audio.duration)) {
+        setDuration(audio.duration)
+      }
+    }
     const handleEnded = () => setIsPlaying(false)
     const handleWaiting = () => setIsLoading(true)
     const handleCanPlay = () => setIsLoading(false)
+    const handleError = () => { setHasError(true); setIsLoading(false); setIsPlaying(false) }
 
     audio.addEventListener('timeupdate', handleTimeUpdate)
     audio.addEventListener('durationchange', handleDurationChange)
+    audio.addEventListener('loadedmetadata', handleDurationChange)
     audio.addEventListener('ended', handleEnded)
     audio.addEventListener('waiting', handleWaiting)
     audio.addEventListener('canplay', handleCanPlay)
+    audio.addEventListener('error', handleError)
 
     return () => {
       audio.removeEventListener('timeupdate', handleTimeUpdate)
       audio.removeEventListener('durationchange', handleDurationChange)
+      audio.removeEventListener('loadedmetadata', handleDurationChange)
       audio.removeEventListener('ended', handleEnded)
       audio.removeEventListener('waiting', handleWaiting)
       audio.removeEventListener('canplay', handleCanPlay)
+      audio.removeEventListener('error', handleError)
     }
-  }, [])
+  }, [src])
 
   const togglePlay = useCallback(async () => {
     const audio = audioRef.current
@@ -115,16 +133,23 @@ export function AudioPlayer({ src, title, status, className, compact = false }: 
     return <span className="text-xs text-gray-500">파일 없음</span>
   }
 
+  const renderErrorState = () => (
+    <div className="flex items-center gap-2 text-orange-400" title="파일을 불러올 수 없습니다. URL이 만료됐거나 재생 불가 상태입니다.">
+      <AlertCircle className="h-4 w-4 shrink-0" />
+      <span className="text-xs">재생 불가</span>
+    </div>
+  )
+
   if (compact) {
     return (
       <div className={cn('flex items-center gap-3', className)}>
-        {src && <audio ref={audioRef} src={src} preload="metadata" />}
+        <audio ref={audioRef} src={src} preload="metadata" />
         <button
           onClick={togglePlay}
-          disabled={isDisabled}
+          disabled={isDisabled || hasError}
           className={cn(
-            'flex h-8 w-8 items-center justify-center rounded-full transition-colors',
-            isDisabled
+            'flex h-8 w-8 items-center justify-center rounded-full transition-colors shrink-0',
+            isDisabled || hasError
               ? 'bg-white/5 text-gray-600 cursor-not-allowed'
               : 'bg-primary-600 text-white hover:bg-primary-500 active:bg-primary-700'
           )}
@@ -137,7 +162,9 @@ export function AudioPlayer({ src, title, status, className, compact = false }: 
             <Play className="h-3.5 w-3.5 ml-0.5" />
           )}
         </button>
-        {isDisabled ? (
+        {hasError ? (
+          renderErrorState()
+        ) : isDisabled ? (
           renderDisabledState()
         ) : (
           <div className="flex flex-1 items-center gap-2">
@@ -172,10 +199,12 @@ export function AudioPlayer({ src, title, status, className, compact = false }: 
         className
       )}
     >
-      {src && <audio ref={audioRef} src={src} preload="metadata" />}
+      <audio ref={audioRef} src={src} preload="metadata" />
       {title && <p className="mb-3 text-sm font-medium text-white truncate">{title}</p>}
 
-      {isDisabled ? (
+      {hasError ? (
+        <div className="flex items-center justify-center py-4">{renderErrorState()}</div>
+      ) : isDisabled ? (
         <div className="flex items-center justify-center py-4">{renderDisabledState()}</div>
       ) : (
         <div className="space-y-3">

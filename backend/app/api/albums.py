@@ -45,10 +45,31 @@ async def _build_album_response(album: Album, db: AsyncSession) -> dict:
 
     resp = AlbumResponse.model_validate(album)
     data = resp.model_dump()
-    data["tracks"] = [
-        TrackInAlbum(album_track_id=at.id, track_id=at.track_id, order=at.order).model_dump()
-        for at in album_tracks
-    ]
+
+    # Fetch track details for each album track
+    tracks_data = []
+    for at in album_tracks:
+        track_result = await db.execute(select(Track).where(Track.id == at.track_id))
+        track = track_result.scalar_one_or_none()
+
+        if track:
+            track_in_album = TrackInAlbum(
+                album_track_id=at.id,
+                track_id=at.track_id,
+                order=at.order,
+                title=track.title,
+                artist_name=track.artist_name,
+                genre=track.genre,
+                bpm=track.bpm,
+                mood=track.mood,
+                file_url=track.file_url,
+                status=track.status,
+                duration=track.duration,
+                ai_service=track.ai_service,
+            )
+            tracks_data.append(track_in_album.model_dump())
+
+    data["tracks"] = tracks_data
     return data
 
 
@@ -407,26 +428,31 @@ async def download_album(
     async def _fetch_bytes(url: str) -> bytes | None:
         """로컬 파일 또는 외부 URL에서 바이트를 가져옴"""
         try:
-            if url.startswith("/app/uploads") or url.startswith("uploads/"):
-                file_path = url
-                if not file_path.startswith("/"):
-                    file_path = f"/app/{file_path}"
-                logger.info(f"Fetching local file: {file_path}")
+            # 로컬 파일 경로
+            if url.startswith("/app/uploads"):
+                if os.path.exists(url):
+                    with open(url, 'rb') as f:
+                        return f.read() or None
+                logger.warning(f"Local file not found: {url}")
+                return None
+
+            # 로컬 HTTP URL → 직접 파일로 변환 (자기 자신에게 HTTP 요청 불필요)
+            local_prefix = f"{settings.FILE_BASE_URL}/api/v1/files/local/"
+            if url.startswith(local_prefix):
+                rel_path = url[len(local_prefix):]
+                file_path = f"/app/uploads/{rel_path}"
                 if os.path.exists(file_path):
                     with open(file_path, 'rb') as f:
-                        content = f.read()
-                        if content:
-                            return content
-                        else:
-                            logger.warning(f"Local file is empty: {file_path}")
-                else:
-                    logger.warning(f"Local file not found: {file_path}")
-            elif url.startswith("http://") or url.startswith("https://"):
-                logger.info(f"Fetching remote file: {url}")
+                        return f.read() or None
+                logger.warning(f"Local file not found: {file_path}")
+                return None
+
+            # 외부 URL
+            if url.startswith("http://") or url.startswith("https://"):
                 async with httpx.AsyncClient(timeout=30) as client:
                     resp = await client.get(url)
                     resp.raise_for_status()
-                    return resp.content
+                    return resp.content or None
         except Exception as e:
             logger.error(f"Could not fetch {url}: {e}")
         return None

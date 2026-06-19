@@ -25,6 +25,16 @@ class TrackInAlbum(BaseModel):
     album_track_id: UUID
     track_id: UUID
     order: int
+    # Track details for frontend display
+    title: Optional[str] = None
+    artist_name: Optional[str] = None
+    genre: Optional[str] = None
+    bpm: Optional[int] = None
+    mood: Optional[str] = None
+    file_url: Optional[str] = None
+    status: Optional[str] = None
+    duration: Optional[float] = None
+    ai_service: Optional[str] = None
 
 
 class AlbumResponse(BaseModel):

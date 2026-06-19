@@ -14,6 +14,7 @@ from app.core.security import get_current_user
 from app.models.user import User
 from app.models.track import Track
 from app.schemas.track import TrackCreate, TrackResponse, TrackStatusResponse
+from app.core.config import settings
 from app.services.ai_music import start_music_generation, call_suno_api, VALID_AI_SERVICES, MOCK_MP3_URL
 
 logger = logging.getLogger(__name__)
@@ -226,14 +227,17 @@ async def _download_and_save_track(track_id: str, audio_url: str) -> None:
             logger.warning(f"Track {track_id}: downloaded file is empty, keeping original URL")
             return
 
+        # 브라우저에서 재생 가능한 HTTP URL로 저장
+        http_url = f"{settings.FILE_BASE_URL}/api/v1/files/local/tracks/{track_id}.mp3"
+
         async with AsyncSessionLocal() as db:
             result = await db.execute(select(Track).where(Track.id == track_id))
             track = result.scalar_one_or_none()
             if track:
                 old_url = track.file_url
-                track.file_url = local_path
+                track.file_url = http_url
                 await db.commit()
-                logger.info(f"Track {track_id}: saved locally ({file_size} bytes). Updated DB: {old_url} → {local_path}")
+                logger.info(f"Track {track_id}: saved locally ({file_size} bytes). URL: {old_url} → {http_url}")
             else:
                 logger.warning(f"Track {track_id}: not found in database, file saved but not linked")
     except Exception as e:
@@ -295,13 +299,16 @@ async def upload_track(
         logger.info(f"Uploaded MP3 file: {track_id}.mp3 ({file_size} bytes)")
 
         # Create track record
+        # Use relative URL path for browser access
+        relative_url = f"/api/v1/files/local/tracks/{track_id}.mp3"
         track = Track(
             id=uuid.UUID(track_id),
             user_id=current_user.id,
             title=title,
             artist_name=artist,
             genre=genre or "General",
-            file_url=file_path,
+            file_url=relative_url,
+            file_key=f"tracks/{track_id}.mp3",
             status="completed",
             ai_service="upload",  # Mark as user-uploaded, not AI-generated
             duration=0.0,  # Will be calculated later if needed

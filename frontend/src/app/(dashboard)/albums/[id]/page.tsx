@@ -381,14 +381,6 @@ export default function AlbumDetailPage() {
                 >
                   발행하기
                 </Button>
-                <Button
-                  size="sm"
-                  onClick={() => setIsAddTrackOpen(true)}
-                  disabled={trackOptions.length === 0}
-                >
-                  <Plus className="h-3.5 w-3.5" />
-                  트랙 추가
-                </Button>
               </>
             )}
           </div>
@@ -430,7 +422,8 @@ export default function AlbumDetailPage() {
           ) : (
             <div className="space-y-3">
               {sortedTracks.map((albumTrack, index) => {
-                const track = allTracks?.find((t) => t.id === albumTrack.track_id) || albumTrack.track
+                // albumTrack now contains full track details from album API
+                const track = albumTrack
                 if (!track) return null
                 return (
                   <div
