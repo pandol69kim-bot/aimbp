@@ -53,6 +53,12 @@ async def _build_album_response(album: Album, db: AsyncSession) -> dict:
         track = track_result.scalar_one_or_none()
 
         if track:
+            # Convert relative file URLs to absolute URLs for browser compatibility
+            file_url = track.file_url
+            if file_url and file_url.startswith('/'):
+                # Relative path → add backend URL
+                file_url = f"http://localhost:8001{file_url}"
+
             track_in_album = TrackInAlbum(
                 album_track_id=at.id,
                 track_id=at.track_id,
@@ -62,7 +68,7 @@ async def _build_album_response(album: Album, db: AsyncSession) -> dict:
                 genre=track.genre,
                 bpm=track.bpm,
                 mood=track.mood,
-                file_url=track.file_url,
+                file_url=file_url,
                 status=track.status,
                 duration=track.duration,
                 ai_service=track.ai_service,
