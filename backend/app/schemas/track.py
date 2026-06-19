@@ -18,6 +18,7 @@ class TrackResponse(BaseModel):
     user_id: UUID
     lyrics_id: Optional[UUID]
     title: str
+    artist_name: Optional[str] = None
     genre: str
     bpm: Optional[int]
     mood: Optional[str]

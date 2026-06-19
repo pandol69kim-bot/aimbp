@@ -20,6 +20,7 @@ class Track(Base):
         UUID(as_uuid=True), ForeignKey("lyrics.id", ondelete="SET NULL"), nullable=True
     )
     title: Mapped[str] = mapped_column(String(255), nullable=False)
+    artist_name: Mapped[str | None] = mapped_column(String(255), nullable=True)  # Track artist (for uploaded files)
     genre: Mapped[str] = mapped_column(String(100), nullable=False, default="")
     bpm: Mapped[int | None] = mapped_column(Integer, nullable=True)
     mood: Mapped[str | None] = mapped_column(String(100), nullable=True)

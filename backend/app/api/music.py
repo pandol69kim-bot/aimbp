@@ -1,10 +1,11 @@
 import logging
 import os
 import httpx
+import uuid
 from typing import Any
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Request, status
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Request, status, File, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, desc
 
@@ -242,6 +243,84 @@ async def _download_and_save_track(track_id: str, audio_url: str) -> None:
                 os.remove(local_path)
             except:
                 pass
+
+
+@router.post("/upload", status_code=status.HTTP_201_CREATED)
+async def upload_track(
+    file: UploadFile = File(...),
+    title: str = None,
+    artist: str = None,
+    genre: str = "",
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Upload MP3 file and create a track."""
+
+    # Validate file
+    if not file.filename.endswith('.mp3'):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Only MP3 files are supported"
+        )
+
+    # Use filename as title if not provided
+    if not title:
+        title = file.filename.replace('.mp3', '')
+
+    if not artist:
+        artist = current_user.nickname
+
+    try:
+        # Create uploads/tracks directory if it doesn't exist
+        uploads_dir = "/app/uploads/tracks"
+        os.makedirs(uploads_dir, exist_ok=True)
+
+        # Generate filename with track ID
+        track_id = str(uuid.uuid4())
+        file_path = f"{uploads_dir}/{track_id}.mp3"
+
+        # Read and save file
+        contents = await file.read()
+        file_size = len(contents)
+
+        if file_size == 0:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="File is empty"
+            )
+
+        with open(file_path, 'wb') as f:
+            f.write(contents)
+
+        logger.info(f"Uploaded MP3 file: {track_id}.mp3 ({file_size} bytes)")
+
+        # Create track record
+        track = Track(
+            id=uuid.UUID(track_id),
+            user_id=current_user.id,
+            title=title,
+            artist_name=artist,
+            genre=genre or "General",
+            file_url=file_path,
+            status="completed",
+            ai_service="upload",  # Mark as user-uploaded, not AI-generated
+            duration=0.0,  # Will be calculated later if needed
+        )
+
+        db.add(track)
+        await db.flush()
+        await db.refresh(track)
+
+        logger.info(f"Created track record: {track.id}")
+
+        return _ok(TrackResponse.model_validate(track).model_dump())
+
+    except Exception as e:
+        logger.error(f"Error uploading track: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to upload file: {str(e)}"
+        )
 
 
 @router.delete("/{track_id}", status_code=status.HTTP_204_NO_CONTENT)
