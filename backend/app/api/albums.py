@@ -340,6 +340,41 @@ async def publish_album(
     })
 
 
+@router.post("/{album_id}/unpublish")
+async def unpublish_album(
+    album_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """앨범 발행 취소 (draft 상태로 복원, 수정 가능하게 해제)"""
+    result = await db.execute(
+        select(Album).where(Album.id == album_id, Album.user_id == current_user.id)
+    )
+    album = result.scalar_one_or_none()
+    if not album:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Album not found")
+
+    # 발행되지 않은 경우
+    if not album.is_locked:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Album is not published"
+        )
+
+    # 발행 취소 처리
+    album.is_locked = False
+    album.status = "draft"
+
+    await db.flush()
+    await db.refresh(album)
+    await db.commit()
+
+    return _ok({
+        "message": "Album unpublished successfully",
+        "album": await _build_album_response(album, db)
+    })
+
+
 @router.get("/{album_id}/download")
 async def download_album(
     album_id: UUID,

@@ -2,12 +2,13 @@
 
 import { useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
-import { ArrowLeft, Plus, Trash2, GripVertical, Image as ImageIcon, Music, Download, CheckCircle2 } from 'lucide-react'
+import { ArrowLeft, Plus, Trash2, GripVertical, Image as ImageIcon, Music, Download, CheckCircle2, RotateCcw } from 'lucide-react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import api from '@/lib/api'
 import { useAlbumById, useAddTrackToAlbum, useRemoveTrackFromAlbum, useUpdateAlbum } from '@/hooks/useAlbums'
 import { useTrackList } from '@/hooks/useMusic'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Dialog, DialogHeader, DialogBody, DialogFooter } from '@/components/ui/dialog'
@@ -70,6 +71,12 @@ export default function AlbumDetailPage() {
 
   const [isAddTrackOpen, setIsAddTrackOpen] = useState(false)
   const [selectedTrackId, setSelectedTrackId] = useState('')
+  const [addTrackMode, setAddTrackMode] = useState<'existing' | 'upload'>('existing')
+  const [uploadFile, setUploadFile] = useState<File | null>(null)
+  const [uploadTitle, setUploadTitle] = useState('')
+  const [uploadArtist, setUploadArtist] = useState('')
+  const [uploadGenre, setUploadGenre] = useState('')
+  const [isUploading, setIsUploading] = useState(false)
 
   const [isPickCoverOpen, setIsPickCoverOpen] = useState(false)
   const [selectedCoverUrl, setSelectedCoverUrl] = useState<string | null>(null)
@@ -115,6 +122,43 @@ export default function AlbumDetailPage() {
     setIsAddTrackOpen(false)
   }
 
+  const handleUploadTrack = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!uploadFile) return
+
+    setIsUploading(true)
+    try {
+      const formData = new FormData()
+      formData.append('file', uploadFile)
+      if (uploadTitle) formData.append('title', uploadTitle)
+      if (uploadArtist) formData.append('artist', uploadArtist)
+      if (uploadGenre) formData.append('genre', uploadGenre)
+
+      const response = await api.post<any>('/music/upload', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      })
+
+      const newTrack = response.data
+      await addTrackMutation.mutateAsync({
+        albumId,
+        data: { track_id: newTrack.id, order: (album?.tracks.length || 0) + 1 }
+      })
+
+      setUploadFile(null)
+      setUploadTitle('')
+      setUploadArtist('')
+      setUploadGenre('')
+      setAddTrackMode('existing')
+      setIsAddTrackOpen(false)
+      queryClient.invalidateQueries({ queryKey: ['tracks'] })
+    } catch (error: any) {
+      console.error('Upload error:', error)
+      alert(`업로드 실패: ${error.response?.data?.detail || error.message}`)
+    } finally {
+      setIsUploading(false)
+    }
+  }
+
   const handleRemoveTrack = async (trackId: string) => {
     if (confirm('이 트랙을 앨범에서 제거하시겠습니까?')) {
       await removeTrackMutation.mutateAsync({ albumId, trackId })
@@ -122,6 +166,7 @@ export default function AlbumDetailPage() {
   }
 
   const [isDownloading, setIsDownloading] = useState(false)
+  const [isUnpublishing, setIsUnpublishing] = useState(false)
 
   const handlePublish = async () => {
     if (!album) return
@@ -169,6 +214,26 @@ export default function AlbumDetailPage() {
       alert(`다운로드 실패: ${error.message || '알 수 없는 오류'}`)
     } finally {
       setIsDownloading(false)
+    }
+  }
+
+  const handleUnpublish = async () => {
+    if (!album) return
+
+    if (!confirm('발행을 취소하시겠습니까?\n앨범을 다시 수정할 수 있게 됩니다.')) {
+      return
+    }
+
+    setIsUnpublishing(true)
+    try {
+      await api.post(`/albums/${albumId}/unpublish`)
+      queryClient.invalidateQueries({ queryKey: ['albums', albumId] })
+      queryClient.invalidateQueries({ queryKey: ['albums'] })
+    } catch (error: any) {
+      console.error('Unpublish error:', error)
+      alert(`발행 취소 실패: ${error.response?.data?.detail || error.message}`)
+    } finally {
+      setIsUnpublishing(false)
     }
   }
 
@@ -229,6 +294,16 @@ export default function AlbumDetailPage() {
                 >
                   <Download className="h-3.5 w-3.5" />
                   앨범 다운로드 (ZIP)
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleUnpublish}
+                  isLoading={isUnpublishing}
+                  className="text-orange-400 hover:text-orange-300 border-orange-400/30 hover:border-orange-400/50"
+                >
+                  <RotateCcw className="h-3.5 w-3.5" />
+                  발행 취소
                 </Button>
                 <span className="text-xs text-green-400">✅ 발행됨 · 다운로드 가능</span>
               </>
@@ -417,38 +492,110 @@ export default function AlbumDetailPage() {
       </Dialog>
 
       {/* Add Track Dialog */}
-      <Dialog open={isAddTrackOpen} onClose={() => setIsAddTrackOpen(false)}>
-        <DialogHeader title="트랙 추가" onClose={() => setIsAddTrackOpen(false)} />
+      <Dialog open={isAddTrackOpen} onClose={() => { setIsAddTrackOpen(false); setAddTrackMode('existing'); }}>
+        <DialogHeader title="트랙 추가" onClose={() => { setIsAddTrackOpen(false); setAddTrackMode('existing'); }} />
         <DialogBody>
-          <form id="add-track-form" onSubmit={handleAddTrack} className="space-y-4">
-            {trackOptions.length > 0 ? (
-              <Select
-                label="트랙 선택"
-                options={trackOptions}
-                placeholder="추가할 트랙 선택"
-                value={selectedTrackId}
-                onChange={(e) => setSelectedTrackId(e.target.value)}
+          {/* Mode Tabs */}
+          <div className="flex gap-2 mb-4 border-b border-white/10">
+            <button
+              onClick={() => setAddTrackMode('existing')}
+              className={`px-3 py-2 text-sm font-medium transition-colors ${
+                addTrackMode === 'existing'
+                  ? 'text-primary-400 border-b-2 border-primary-400'
+                  : 'text-gray-400 hover:text-gray-300'
+              }`}
+            >
+              기존 트랙
+            </button>
+            <button
+              onClick={() => setAddTrackMode('upload')}
+              className={`px-3 py-2 text-sm font-medium transition-colors ${
+                addTrackMode === 'upload'
+                  ? 'text-primary-400 border-b-2 border-primary-400'
+                  : 'text-gray-400 hover:text-gray-300'
+              }`}
+            >
+              MP3 업로드
+            </button>
+          </div>
+
+          {/* Existing Track Mode */}
+          {addTrackMode === 'existing' && (
+            <form id="add-track-form" onSubmit={handleAddTrack} className="space-y-4">
+              {trackOptions.length > 0 ? (
+                <Select
+                  label="트랙 선택"
+                  options={trackOptions}
+                  placeholder="추가할 트랙 선택"
+                  value={selectedTrackId}
+                  onChange={(e) => setSelectedTrackId(e.target.value)}
+                  required
+                />
+              ) : (
+                <p className="text-sm text-gray-400">
+                  추가 가능한 트랙이 없습니다. 완료된 트랙이 필요합니다.
+                </p>
+              )}
+            </form>
+          )}
+
+          {/* Upload Mode */}
+          {addTrackMode === 'upload' && (
+            <form id="upload-track-form" onSubmit={handleUploadTrack} className="space-y-4">
+              <Input
+                type="file"
+                label="MP3 파일 *"
+                accept=".mp3"
                 required
+                onChange={(e) => setUploadFile(e.target.files?.[0] || null)}
               />
-            ) : (
-              <p className="text-sm text-gray-400">
-                추가 가능한 트랙이 없습니다. 완료된 트랙이 필요합니다.
-              </p>
-            )}
-          </form>
+              <Input
+                type="text"
+                label="곡 제목"
+                placeholder="파일명 사용 (기본값)"
+                value={uploadTitle}
+                onChange={(e) => setUploadTitle(e.target.value)}
+              />
+              <Input
+                type="text"
+                label="아티스트"
+                placeholder="당신의 닉네임 (기본값)"
+                value={uploadArtist}
+                onChange={(e) => setUploadArtist(e.target.value)}
+              />
+              <Input
+                type="text"
+                label="장르"
+                placeholder="곡의 장르"
+                value={uploadGenre}
+                onChange={(e) => setUploadGenre(e.target.value)}
+              />
+            </form>
+          )}
         </DialogBody>
         <DialogFooter>
-          <Button variant="outline" onClick={() => setIsAddTrackOpen(false)}>
+          <Button variant="outline" onClick={() => { setIsAddTrackOpen(false); setAddTrackMode('existing'); }}>
             취소
           </Button>
-          <Button
-            type="submit"
-            form="add-track-form"
-            isLoading={addTrackMutation.isPending}
-            disabled={trackOptions.length === 0 || !selectedTrackId}
-          >
-            추가
-          </Button>
+          {addTrackMode === 'existing' ? (
+            <Button
+              type="submit"
+              form="add-track-form"
+              isLoading={addTrackMutation.isPending}
+              disabled={trackOptions.length === 0 || !selectedTrackId}
+            >
+              추가
+            </Button>
+          ) : (
+            <Button
+              type="submit"
+              form="upload-track-form"
+              isLoading={isUploading}
+              disabled={!uploadFile}
+            >
+              업로드
+            </Button>
+          )}
         </DialogFooter>
       </Dialog>
     </div>
