@@ -1,8 +1,10 @@
 'use client'
 
 import { useState } from 'react'
-import { Sparkles, FileText, Trash2, ChevronDown, ChevronUp } from 'lucide-react'
+import { Sparkles, FileText, Trash2, ChevronDown, ChevronUp, Upload, Download } from 'lucide-react'
 import { useLyricsList, useGenerateLyrics, useDeleteLyrics } from '@/hooks/useLyrics'
+import api from '@/lib/api'
+import { useQueryClient } from '@tanstack/react-query'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select } from '@/components/ui/select'
@@ -47,6 +49,53 @@ const aiModelOptions = [
 function LyricsCard({ lyrics, onDelete }: { lyrics: Lyrics; onDelete: (id: string) => void }) {
   const [expanded, setExpanded] = useState(false)
 
+  const handleDownloadMd = () => {
+    // MD 형식으로 가사 변환
+    const mdContent = `# ${lyrics.title}
+
+**Genre:** ${lyrics.prompt_genre || 'Unknown'}
+**Mood:** ${lyrics.prompt_mood || 'Unknown'}
+**Created:** ${new Date(lyrics.created_at).toLocaleString()}
+
+---
+
+## Verse
+
+${lyrics.verse || '(No verse)'}
+
+---
+
+## Chorus
+
+${lyrics.chorus || '(No chorus)'}
+
+---
+
+## Bridge
+
+${lyrics.bridge || '(No bridge)'}
+
+---
+
+## Hook
+
+${lyrics.hook || '(No hook)'}
+`
+
+    // Blob 생성
+    const blob = new Blob([mdContent], { type: 'text/markdown' })
+    const url = window.URL.createObjectURL(blob)
+
+    // 다운로드
+    const link = document.createElement('a')
+    link.href = url
+    link.download = `${lyrics.title}.md`
+    document.body.appendChild(link)
+    link.click()
+    link.parentNode?.removeChild(link)
+    window.URL.revokeObjectURL(url)
+  }
+
   return (
     <Card className="hover:border-white/20 transition-colors">
       <CardHeader>
@@ -58,6 +107,13 @@ function LyricsCard({ lyrics, onDelete }: { lyrics: Lyrics; onDelete: (id: strin
             </p>
           </div>
           <div className="flex items-center gap-1">
+            <button
+              onClick={handleDownloadMd}
+              className="p-1.5 text-gray-400 hover:text-primary-400 rounded-lg hover:bg-primary-900/20 transition-colors"
+              title="MD 파일 다운로드"
+            >
+              <Download className="h-4 w-4" />
+            </button>
             <button
               onClick={() => setExpanded(!expanded)}
               className="p-1.5 text-gray-400 hover:text-white rounded-lg hover:bg-white/5 transition-colors"
@@ -75,31 +131,47 @@ function LyricsCard({ lyrics, onDelete }: { lyrics: Lyrics; onDelete: (id: strin
       </CardHeader>
       {expanded && (
         <CardContent>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            {lyrics.verse && (
-              <div className="rounded-lg bg-white/5 p-3">
-                <p className="text-xs font-semibold text-primary-400 mb-2">VERSE</p>
-                <p className="text-sm text-gray-300 whitespace-pre-line">{lyrics.verse}</p>
-              </div>
-            )}
-            {lyrics.chorus && (
-              <div className="rounded-lg bg-white/5 p-3">
-                <p className="text-xs font-semibold text-accent-400 mb-2">CHORUS</p>
-                <p className="text-sm text-gray-300 whitespace-pre-line">{lyrics.chorus}</p>
-              </div>
-            )}
-            {lyrics.bridge && (
-              <div className="rounded-lg bg-white/5 p-3">
-                <p className="text-xs font-semibold text-secondary-400 mb-2">BRIDGE</p>
-                <p className="text-sm text-gray-300 whitespace-pre-line">{lyrics.bridge}</p>
-              </div>
-            )}
-            {lyrics.hook && (
-              <div className="rounded-lg bg-white/5 p-3">
-                <p className="text-xs font-semibold text-yellow-400 mb-2">HOOK</p>
-                <p className="text-sm text-gray-300 whitespace-pre-line">{lyrics.hook}</p>
-              </div>
-            )}
+          <div className="bg-gray-950/50 rounded-lg p-6 font-mono text-xs">
+            {/* 제목과 메타데이터 */}
+            <div className="mb-6 pb-4 border-b border-white/10">
+              <p className="text-base font-bold text-primary-300 mb-2"># {lyrics.title}</p>
+              <p className="text-gray-400">
+                {lyrics.prompt_genre && `Genre: ${lyrics.prompt_genre}`}
+                {lyrics.prompt_genre && lyrics.prompt_mood && ' • '}
+                {lyrics.prompt_mood && `Mood: ${lyrics.prompt_mood}`}
+              </p>
+            </div>
+
+            {/* 가사 내용 - 원본 형식 그대로 */}
+            <div className="space-y-4 text-gray-200 leading-relaxed">
+              {lyrics.verse && (
+                <div>
+                  <p className="text-sm font-semibold text-primary-300 mb-2">## Verse</p>
+                  <p className="whitespace-pre-line text-xs">{lyrics.verse}</p>
+                </div>
+              )}
+
+              {lyrics.chorus && (
+                <div>
+                  <p className="text-sm font-semibold text-accent-300 mb-2 mt-4">## Chorus</p>
+                  <p className="whitespace-pre-line text-xs">{lyrics.chorus}</p>
+                </div>
+              )}
+
+              {lyrics.bridge && (
+                <div>
+                  <p className="text-sm font-semibold text-secondary-300 mb-2 mt-4">## Bridge</p>
+                  <p className="whitespace-pre-line text-xs">{lyrics.bridge}</p>
+                </div>
+              )}
+
+              {lyrics.hook && (
+                <div>
+                  <p className="text-sm font-semibold text-yellow-300 mb-2 mt-4">## Hook</p>
+                  <p className="whitespace-pre-line text-xs">{lyrics.hook}</p>
+                </div>
+              )}
+            </div>
           </div>
         </CardContent>
       )}
@@ -111,6 +183,7 @@ export default function LyricsPage() {
   const { data: lyricsList, isLoading } = useLyricsList()
   const generateMutation = useGenerateLyrics()
   const deleteMutation = useDeleteLyrics()
+  const queryClient = useQueryClient()
 
   const [title, setTitle] = useState('')
   const [subject, setSubject] = useState('')
@@ -118,6 +191,10 @@ export default function LyricsPage() {
   const [genre, setGenre] = useState('')
   const [artistStyle, setArtistStyle] = useState('')
   const [language, setLanguage] = useState('korean')
+  const [uploadFiles, setUploadFiles] = useState<File[]>([])
+  const [uploadProgress, setUploadProgress] = useState<{[key: string]: number}>({})
+  const [isUploading, setIsUploading] = useState(false)
+  const [isDragActive, setIsDragActive] = useState(false)
   const [aiModel, setAiModel] = useState('openai')
   const [generatedLyrics, setGeneratedLyrics] = useState<Lyrics | null>(null)
 
@@ -144,6 +221,99 @@ export default function LyricsPage() {
     }
   }
 
+  const handleDrag = (e: React.DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    if (e.type === 'dragenter' || e.type === 'dragover') {
+      setIsDragActive(true)
+    } else if (e.type === 'dragleave') {
+      setIsDragActive(false)
+    }
+  }
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault()
+    e.stopPropagation()
+    setIsDragActive(false)
+
+    const files = Array.from(e.dataTransfer.files).filter((file) =>
+      file.name.toLowerCase().endsWith('.md')
+    )
+
+    if (files.length > 0) {
+      setUploadFiles((prev) => [...prev, ...files])
+    }
+  }
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files) {
+      const files = Array.from(e.target.files)
+      setUploadFiles((prev) => [...prev, ...files])
+    }
+  }
+
+  const removeFile = (index: number) => {
+    setUploadFiles((prev) => prev.filter((_, i) => i !== index))
+  }
+
+  const handleUploadMd = async () => {
+    if (uploadFiles.length === 0) return
+
+    setIsUploading(true)
+    try {
+      let uploadedCount = 0
+
+      for (let i = 0; i < uploadFiles.length; i++) {
+        const file = uploadFiles[i]
+        const fileKey = file.name
+
+        try {
+          setUploadProgress((prev) => ({
+            ...prev,
+            [fileKey]: 0,
+          }))
+
+          const formData = new FormData()
+          formData.append('file', file)
+
+          const response = await api.post('/lyrics/upload', formData, {
+            headers: { 'Content-Type': 'multipart/form-data' },
+          })
+
+          const newLyrics = response.data.data
+          if (i === uploadFiles.length - 1) {
+            setGeneratedLyrics(newLyrics)
+          }
+
+          uploadedCount++
+          setUploadProgress((prev) => ({
+            ...prev,
+            [fileKey]: 100,
+          }))
+        } catch (error: any) {
+          console.error(`Upload failed for ${file.name}:`, error)
+          setUploadProgress((prev) => ({
+            ...prev,
+            [fileKey]: -1,
+          }))
+        }
+      }
+
+      if (uploadedCount > 0) {
+        alert(`${uploadedCount}개의 가사가 생성 목록에 추가되었습니다.`)
+      }
+
+      setUploadFiles([])
+      setUploadProgress({})
+      queryClient.invalidateQueries({ queryKey: ['lyricsList'] })
+    } catch (error: any) {
+      console.error('Upload error:', error)
+      alert(`업로드 실패: ${error.message}`)
+    } finally {
+      setIsUploading(false)
+    }
+  }
+
   if (isLoading) return <PageLoader label="작사 목록 로딩 중..." />
 
   return (
@@ -158,7 +328,108 @@ export default function LyricsPage() {
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Form */}
-        <div>
+        <div className="space-y-6">
+          {/* MD Upload Card */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Upload className="h-4 w-4" />
+                MD 파일 업로드
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-4">
+                {/* Drag Drop Area */}
+                <div
+                  onDragEnter={handleDrag}
+                  onDragLeave={handleDrag}
+                  onDragOver={handleDrag}
+                  onDrop={handleDrop}
+                  className={`relative rounded-lg border-2 border-dashed p-6 text-center transition-colors ${
+                    isDragActive
+                      ? 'border-primary-500 bg-primary-500/5'
+                      : 'border-white/20 bg-white/5 hover:border-white/30'
+                  }`}
+                >
+                  <input
+                    type="file"
+                    accept=".md"
+                    multiple
+                    onChange={handleFileSelect}
+                    className="hidden"
+                    id="md-file-input"
+                  />
+                  <label htmlFor="md-file-input" className="cursor-pointer space-y-2">
+                    <div className="text-2xl">📝</div>
+                    <p className="text-sm font-medium text-white">MD 파일을 드래그하거나 클릭</p>
+                    <p className="text-xs text-gray-400">작사된 마크다운 파일 업로드</p>
+                  </label>
+                </div>
+
+                {/* File List */}
+                {uploadFiles.length > 0 && (
+                  <div className="space-y-2">
+                    <p className="text-sm font-medium text-gray-300">
+                      선택된 파일 ({uploadFiles.length}개)
+                    </p>
+                    <div className="space-y-2 max-h-[200px] overflow-y-auto">
+                      {uploadFiles.map((file, index) => {
+                        const progress = uploadProgress[file.name] ?? 0
+                        const isError = progress === -1
+
+                        return (
+                          <div
+                            key={`${file.name}-${index}`}
+                            className="flex items-center gap-2 rounded-lg border border-white/10 bg-white/5 p-2"
+                          >
+                            <div className="flex-1 min-w-0">
+                              <p className="text-xs text-white truncate">{file.name}</p>
+                              {isUploading && progress > 0 && progress < 100 && (
+                                <div className="mt-1 h-1 bg-white/10 rounded-full overflow-hidden">
+                                  <div
+                                    className="h-full bg-primary-500 transition-all"
+                                    style={{ width: `${progress}%` }}
+                                  />
+                                </div>
+                              )}
+                              {progress === 100 && (
+                                <p className="text-xs text-green-400 mt-1">✓ 완료</p>
+                              )}
+                              {isError && (
+                                <p className="text-xs text-red-400 mt-1">✗ 실패</p>
+                              )}
+                            </div>
+                            {!isUploading && (
+                              <button
+                                onClick={() => removeFile(index)}
+                                className="p-1 text-gray-500 hover:text-red-400 transition-colors"
+                                type="button"
+                              >
+                                ✕
+                              </button>
+                            )}
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {/* Upload Button */}
+                <Button
+                  onClick={handleUploadMd}
+                  isLoading={isUploading}
+                  disabled={uploadFiles.length === 0}
+                  className="w-full"
+                >
+                  <Upload className="h-3.5 w-3.5" />
+                  {uploadFiles.length > 0 ? `${uploadFiles.length}개 업로드` : '파일 선택'}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Form */}
           <Card>
             <CardHeader>
               <CardTitle>생성 설정</CardTitle>

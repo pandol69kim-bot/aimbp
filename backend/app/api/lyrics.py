@@ -1,7 +1,7 @@
 from typing import Any, List
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, desc
 
@@ -97,3 +97,88 @@ async def delete_lyrics(
     if not lyrics:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Lyrics not found")
     await db.delete(lyrics)
+
+
+@router.post("/upload", status_code=status.HTTP_201_CREATED)
+async def upload_lyrics_md(
+    file: UploadFile = File(...),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """MD 파일을 업로드해서 가사 생성 목록에 추가"""
+
+    # 파일 유효성 검사
+    if not file.filename.endswith('.md'):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Only .md files are supported"
+        )
+
+    # 파일 내용 읽기
+    content = await file.read()
+    if not content:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="File is empty"
+        )
+
+    # MD 파일 파싱
+    text = content.decode('utf-8')
+
+    # 간단한 MD 파싱 로직
+    lines = text.split('\n')
+    title = file.filename.replace('.md', '')
+    verse = ""
+    chorus = ""
+    bridge = ""
+    hook = ""
+
+    current_section = None
+    for line in lines:
+        line = line.strip()
+
+        # 섹션 헤더 감지
+        if line.startswith('## Verse') or line.startswith('# Verse'):
+            current_section = 'verse'
+        elif line.startswith('## Chorus') or line.startswith('# Chorus'):
+            current_section = 'chorus'
+        elif line.startswith('## Bridge') or line.startswith('# Bridge'):
+            current_section = 'bridge'
+        elif line.startswith('## Hook') or line.startswith('# Hook'):
+            current_section = 'hook'
+        elif line.startswith('## Title') or line.startswith('# Title'):
+            # 제목 파싱
+            if ':' in line:
+                title = line.split(':', 1)[1].strip()
+        elif line and not line.startswith('#'):
+            # 섹션에 내용 추가
+            if current_section == 'verse':
+                verse += line + '\n'
+            elif current_section == 'chorus':
+                chorus += line + '\n'
+            elif current_section == 'bridge':
+                bridge += line + '\n'
+            elif current_section == 'hook':
+                hook += line + '\n'
+
+    # 가사 생성
+    lyrics = Lyrics(
+        user_id=current_user.id,
+        title=title,
+        prompt_subject="",
+        prompt_mood="",
+        prompt_genre="",
+        prompt_artist_style="",
+        prompt_language="",
+        ai_model="upload",
+        verse=verse.strip() or "No verse provided",
+        chorus=chorus.strip() or "No chorus provided",
+        bridge=bridge.strip() or "No bridge provided",
+        hook=hook.strip() or "No hook provided",
+    )
+
+    db.add(lyrics)
+    await db.flush()
+    await db.refresh(lyrics)
+
+    return _ok(LyricsResponse.model_validate(lyrics).model_dump())
