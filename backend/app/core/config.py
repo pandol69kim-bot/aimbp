@@ -51,6 +51,9 @@ class Settings(BaseSettings):
     APP_ENV: str = "development"
     DEBUG: bool = True
 
+    # Music Generation
+    MUSIC_GENERATION_MODE: str = "auto"  # auto, mock, or real
+
     @property
     def cors_origins_list(self) -> List[str]:
         return [origin.strip() for origin in self.CORS_ORIGINS.split(",")]
