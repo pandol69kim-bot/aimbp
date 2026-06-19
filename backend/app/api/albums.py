@@ -7,6 +7,8 @@ from uuid import UUID
 from datetime import datetime, timezone
 from zipfile import ZipFile, ZIP_DEFLATED
 
+import httpx
+
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
@@ -367,18 +369,52 @@ async def download_album(
     )
     album_tracks = album_tracks_result.scalars().all()
 
+    async def _fetch_bytes(url: str) -> bytes | None:
+        """로컬 파일 또는 외부 URL에서 바이트를 가져옴"""
+        try:
+            if url.startswith("/app/uploads") or url.startswith("uploads/"):
+                file_path = url
+                if not file_path.startswith("/"):
+                    file_path = f"/app/{file_path}"
+                logger.info(f"Fetching local file: {file_path}")
+                if os.path.exists(file_path):
+                    with open(file_path, 'rb') as f:
+                        content = f.read()
+                        if content:
+                            return content
+                        else:
+                            logger.warning(f"Local file is empty: {file_path}")
+                else:
+                    logger.warning(f"Local file not found: {file_path}")
+            elif url.startswith("http://") or url.startswith("https://"):
+                logger.info(f"Fetching remote file: {url}")
+                async with httpx.AsyncClient(timeout=30) as client:
+                    resp = await client.get(url)
+                    resp.raise_for_status()
+                    return resp.content
+        except Exception as e:
+            logger.error(f"Could not fetch {url}: {e}")
+        return None
+
     # ZIP 파일 생성
     zip_buffer = io.BytesIO()
+    safe_title = album.title.replace("/", "_").replace("\\", "_")
+    track_count = 0
+    failed_tracks = []
+
+    logger.info(f"Starting ZIP creation for album: {album.title} with {len(album_tracks)} tracks")
+
     with ZipFile(zip_buffer, 'w', ZIP_DEFLATED) as zip_file:
         # 커버 아트 추가
         if album.cover_url:
-            try:
-                # 원격 URL인 경우 간단히 참고만 하고, 로컬 파일인 경우 포함
-                if album.cover_url.startswith("/app/uploads"):
-                    with open(album.cover_url, 'rb') as f:
-                        zip_file.writestr(f"{album.title}/cover.jpg", f.read())
-            except Exception as e:
-                logger.warning(f"Could not add cover to ZIP: {e}")
+            logger.info(f"Fetching cover: {album.cover_url}")
+            cover_bytes = await _fetch_bytes(album.cover_url)
+            if cover_bytes:
+                ext = "jpg" if "jpg" in album.cover_url.lower() else "png"
+                zip_file.writestr(f"{safe_title}/cover.{ext}", cover_bytes)
+                logger.info(f"Added cover to ZIP")
+            else:
+                logger.warning(f"Failed to fetch cover: {album.cover_url}")
 
         # 음원 파일 추가
         for idx, album_track in enumerate(album_tracks, 1):
@@ -386,15 +422,51 @@ async def download_album(
                 select(Track).where(Track.id == album_track.track_id)
             )
             track = track_result.scalar_one_or_none()
-            if track and track.file_url:
-                try:
-                    if track.file_url.startswith("/app/uploads"):
-                        with open(track.file_url, 'rb') as f:
-                            filename = f"{idx:02d}. {track.title}.mp3"
-                            zip_file.writestr(f"{album.title}/audio/{filename}", f.read())
-                except Exception as e:
-                    logger.warning(f"Could not add track {track.title} to ZIP: {e}")
+            if track:
+                logger.info(f"Processing track {idx}: {track.title}, file_url={track.file_url}, status={track.status}")
+                if track.file_url:
+                    track_bytes = await _fetch_bytes(track.file_url)
+                    if track_bytes:
+                        safe_track_title = track.title.replace("/", "_").replace("\\", "_")
+                        filename = f"{idx:02d}. {safe_track_title}.mp3"
+                        zip_file.writestr(f"{safe_title}/{filename}", track_bytes)
+                        track_count += 1
+                        logger.info(f"Added track to ZIP: {filename} ({len(track_bytes)} bytes)")
+                    else:
+                        logger.error(f"Failed to fetch track file: {track.title} ({track.file_url})")
+                        failed_tracks.append(f"{idx}. {track.title}")
+                else:
+                    logger.warning(f"Track has no file_url: {track.title}")
+                    failed_tracks.append(f"{idx}. {track.title} (no file_url)")
+            else:
+                logger.error(f"Track not found for album_track: {album_track.id}")
+                failed_tracks.append(f"{idx}. Unknown track")
 
+        # 트랙을 가져오지 못한 경우 정보 파일 생성
+        if failed_tracks or track_count == 0:
+            info_content = f"""Album: {album.title}
+Status: {album.status}
+Published: {album.published_at}
+
+Tracks Successfully Downloaded: {track_count}/{len(album_tracks)}
+
+Failed Tracks:
+"""
+            for failed_track in failed_tracks:
+                info_content += f"  - {failed_track}\n"
+
+            info_content += f"""
+Note: Some track files could not be downloaded. This may be due to:
+1. External URL expiration or server issues
+2. Network connectivity problems
+3. File not yet saved locally
+
+Please contact support if the issue persists.
+"""
+            zip_file.writestr(f"{safe_title}/README.txt", info_content.encode('utf-8'))
+            logger.warning(f"Added README.txt due to missing tracks: {failed_tracks}")
+
+    logger.info(f"ZIP creation completed. Total tracks added: {track_count}/{len(album_tracks)}")
     zip_buffer.seek(0)
 
     return StreamingResponse(

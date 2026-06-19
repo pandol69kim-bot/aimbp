@@ -140,10 +140,23 @@ export default function AlbumDetailPage() {
     if (!album) return
     setIsDownloading(true)
     try {
-      const response = await api.get(`/albums/${albumId}/download`, {
-        responseType: 'blob'
+      const token = localStorage.getItem('access_token')
+      const baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8001/api/v1'
+      const response = await fetch(`${baseUrl}/albums/${albumId}/download`, {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
       })
-      const url = window.URL.createObjectURL(new Blob([response.data]))
+      if (!response.ok) {
+        let detail = '알 수 없는 오류'
+        try {
+          const errJson = await response.json()
+          detail = errJson?.detail || detail
+        } catch {}
+        throw new Error(detail)
+      }
+      const blob = await response.blob()
+      const url = window.URL.createObjectURL(blob)
       const link = document.createElement('a')
       link.href = url
       link.setAttribute('download', `${album.title}.zip`)
@@ -153,8 +166,7 @@ export default function AlbumDetailPage() {
       window.URL.revokeObjectURL(url)
     } catch (error: any) {
       console.error('Download error:', error)
-      const errorDetail = error.response?.data?.detail || error.message || '알 수 없는 오류'
-      alert(`다운로드 실패: ${errorDetail}`)
+      alert(`다운로드 실패: ${error.message || '알 수 없는 오류'}`)
     } finally {
       setIsDownloading(false)
     }

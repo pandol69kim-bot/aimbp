@@ -1,4 +1,6 @@
 import logging
+import os
+import httpx
 from typing import Any
 from uuid import UUID
 
@@ -170,6 +172,7 @@ async def suno_webhook(request: Request, db: AsyncSession = Depends(get_db)):
         track.file_url = audio_url
         track.duration = 180.0
         logger.info(f"Track {track.id} completed (audio). url={audio_url}")
+        background_tasks.add_task(_download_and_save_track, str(track.id), audio_url)
     elif callback_type == "text" and is_success:
         # 텍스트(가사) 생성 완료 — 오디오 콜백을 추가로 기다림
         # stream_audio_url이 있으면 임시로 사용 (실제 오디오 URL로 업데이트됨)
@@ -178,6 +181,7 @@ async def suno_webhook(request: Request, db: AsyncSession = Depends(get_db)):
             track.file_url = audio_url
             track.duration = 180.0
             logger.info(f"Track {track.id} completed (text+stream). url={audio_url}")
+            background_tasks.add_task(_download_and_save_track, str(track.id), audio_url)
         else:
             logger.info(f"Track {track.id} text generated, waiting for audio callback.")
     elif not is_success:
@@ -187,6 +191,57 @@ async def suno_webhook(request: Request, db: AsyncSession = Depends(get_db)):
 
     await db.commit()
     return {"success": True}
+
+
+async def _download_and_save_track(track_id: str, audio_url: str) -> None:
+    """콜백 수신 후 오디오 파일을 로컬에 저장하고 DB file_url을 업데이트"""
+    uploads_dir = "/app/uploads/tracks"
+    try:
+        os.makedirs(uploads_dir, exist_ok=True)
+    except Exception as e:
+        logger.warning(f"Track {track_id}: could not create uploads directory: {e}, keeping original URL")
+        return
+
+    local_path = f"{uploads_dir}/{track_id}.mp3"
+
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        "Accept": "audio/mpeg,audio/*;q=0.9,*/*;q=0.8",
+    }
+    try:
+        logger.info(f"Track {track_id}: downloading from {audio_url}")
+        async with httpx.AsyncClient(timeout=120, follow_redirects=True, headers=headers) as client:
+            async with client.stream("GET", audio_url) as resp:
+                resp.raise_for_status()
+                with open(local_path, "wb") as f:
+                    async for chunk in resp.aiter_bytes(chunk_size=65536):
+                        f.write(chunk)
+
+        file_size = os.path.getsize(local_path)
+        logger.info(f"Track {track_id}: downloaded {file_size} bytes to {local_path}")
+
+        if file_size == 0:
+            os.remove(local_path)
+            logger.warning(f"Track {track_id}: downloaded file is empty, keeping original URL")
+            return
+
+        async with AsyncSessionLocal() as db:
+            result = await db.execute(select(Track).where(Track.id == track_id))
+            track = result.scalar_one_or_none()
+            if track:
+                old_url = track.file_url
+                track.file_url = local_path
+                await db.commit()
+                logger.info(f"Track {track_id}: saved locally ({file_size} bytes). Updated DB: {old_url} → {local_path}")
+            else:
+                logger.warning(f"Track {track_id}: not found in database, file saved but not linked")
+    except Exception as e:
+        logger.error(f"Track {track_id}: failed to download audio file: {e}")
+        if os.path.exists(local_path):
+            try:
+                os.remove(local_path)
+            except:
+                pass
 
 
 @router.delete("/{track_id}", status_code=status.HTTP_204_NO_CONTENT)
